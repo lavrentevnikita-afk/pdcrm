@@ -65,3 +65,8 @@ frontend/.env.*.local
 coverage/
 *.coverage
 .nyc_output/
+
+
+# Backend env and SQLite database
+backend/.env
+backend/data/
