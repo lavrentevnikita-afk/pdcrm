@@ -197,17 +197,10 @@
 ### Phase 1: Core Skeleton & Basic Modules (In Progress)
 
 - [v] Настроить backend на Node.js + Express + SQLite
-<<<<<<< HEAD
 - [v] Настроить frontend на Vue 3 + Vite.
 - [v] Вынести конфигурацию в `.env` (порт, путь к БД, CORS).
 - [v] Настроить базовые API-модули: `clients`, `orders`, `products`.
 - [v] Добавить миграции и сиды для основных таблиц.
-=======
-- [ ] Настроить frontend на Vue 3 + Vite.
-- [ ] Вынести конфигурацию в `.env` (порт, путь к БД, CORS).
-- [ ] Настроить базовые API-модули: `clients`, `orders`, `products`.
-- [ ] Добавить миграции и сиды для основных таблиц.
->>>>>>> 287d30f6683aee7d0ceb947ec48be81f1f49427f
 
 ---
 
