@@ -1,0 +1,67 @@
+# === Общие для всего проекта ===
+node_modules/
+dist/
+build/
+.temp/
+.cache/
+
+# Логи
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+*.log
+
+# ОС и IDE
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+*.iml
+
+# Файлы пакетов (если вдруг появятся)
+*.tgz
+
+# === Backend (Node.js + Express + SQLite) ===
+
+# Env-файлы с секретами, путями к БД и т.п.
+backend/.env
+backend/.env.local
+backend/.env.*.local
+
+# Файлы базы данных (реальные данные заказов/клиентов)
+backend/data/
+backend/*.db
+backend/*.sqlite
+backend/**/*.db
+backend/**/*.sqlite
+
+# Временные файлы/кэш backend
+backend/.cache/
+backend/tmp/
+backend/temp/
+backend/logs/
+
+# === Frontend (Vue + Vite) ===
+
+# node_modules фронта (на случай локальных установок внутри папки)
+frontend/node_modules/
+
+# Билд фронта
+frontend/dist/
+
+# Временные файлы/кэш
+frontend/.cache/
+frontend/tmp/
+frontend/temp/
+
+# Env-файлы фронта
+frontend/.env
+frontend/.env.local
+frontend/.env.*.local
+
+# === Tests / Coverage (если появятся) ===
+coverage/
+*.coverage
+.nyc_output/
