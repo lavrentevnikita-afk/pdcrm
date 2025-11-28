@@ -1,8 +1,30 @@
 exports.seed = async function seed(knex) {
+  const crypto = require('crypto');
+
   // Clear existing data
   await knex('orders').del();
   await knex('products').del();
   await knex('clients').del();
+  await knex('users').del();
+
+  const hashCode = (code) =>
+    crypto.createHash('sha256').update(String(code)).digest('hex');
+
+  const users = [
+    { name: 'Евгений', role: 'director', access_code_hash: hashCode('1001') },
+    { name: 'Андрей', role: 'admin', access_code_hash: hashCode('1002') },
+    { name: 'Александр', role: 'designer', access_code_hash: hashCode('2001') },
+    { name: 'Анастасия', role: 'designer', access_code_hash: hashCode('2002') },
+    { name: 'Валентина', role: 'designer', access_code_hash: hashCode('2003') },
+    { name: 'Юлия', role: 'designer', access_code_hash: hashCode('2004') },
+    { name: 'Ольга', role: 'designer', access_code_hash: hashCode('2005') },
+    { name: 'Никита', role: 'production', access_code_hash: hashCode('3001') },
+    { name: 'Виктор', role: 'production', access_code_hash: hashCode('3002') },
+    { name: 'Павел', role: 'production', access_code_hash: hashCode('3003') },
+    { name: 'Екатерина', role: 'production', access_code_hash: hashCode('3004') },
+  ];
+
+  await knex('users').insert(users);
 
   // Insert clients
   const clients = [
