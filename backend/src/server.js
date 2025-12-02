@@ -122,6 +122,129 @@ app.get('/api/auth/me', authMiddleware, async (req, res, next) => {
   }
 });
 
+
+// GET /api/dashboard/summary
+app.get('/api/dashboard/summary', authMiddleware, async (req, res, next) => {
+  try {
+    const period = req.query.period || 'month';
+    const now = new Date();
+    let from = new Date(now);
+    let periodLengthDays = 30;
+
+    // Определяем начальную точку периода для сумм/статистики
+    if (period === 'day') {
+      from.setHours(0, 0, 0, 0);
+      periodLengthDays = 1;
+    } else if (period === 'week') {
+      // прошлые 7 дней
+      from.setDate(from.getDate() - 7);
+      periodLengthDays = 7;
+    } else {
+      // по умолчанию — условный месяц (30 дней)
+      from.setDate(from.getDate() - 30);
+      periodLengthDays = 30;
+    }
+
+    // SQLite хранит даты как текст, сравниваем по ISO-строке
+    const fromIso = from.toISOString();
+
+    // Загружаем заказы для выбранного периода по created_at
+    const periodOrders = await knex('orders')
+      .where('created_at', '>=', fromIso);
+
+    const totalAmount = periodOrders.reduce(
+      (sum, o) => sum + Number(o.total_amount || 0),
+      0
+    );
+
+    const activeStatuses = ['new', 'in_progress', 'production'];
+    const activeCount = periodOrders.filter((o) =>
+      activeStatuses.includes(o.status)
+    ).length;
+    const completedCount = periodOrders.filter(
+      (o) => o.status === 'completed'
+    ).length;
+
+    // Прошлый период для расчёта процента изменения
+    const prevFrom = new Date(from);
+    prevFrom.setDate(prevFrom.getDate() - periodLengthDays);
+    const prevFromIso = prevFrom.toISOString();
+    const prevToIso = fromIso;
+
+    const previousOrders = await knex('orders')
+      .where('created_at', '>=', prevFromIso)
+      .andWhere('created_at', '<', prevToIso);
+
+    const prevTotalAmount = previousOrders.reduce(
+      (sum, o) => sum + Number(o.total_amount || 0),
+      0
+    );
+
+    let changePercent = null;
+    if (prevTotalAmount > 0) {
+      changePercent = ((totalAmount - prevTotalAmount) / prevTotalAmount) * 100;
+    } else if (totalAmount > 0) {
+      changePercent = 100;
+    }
+
+    // График загруженности по текущей неделе (Mon–Sun) по дедлайнам
+    const today = new Date();
+    const jsDay = today.getDay(); // 0 (Sun) - 6 (Sat)
+    const isoDow = jsDay === 0 ? 7 : jsDay; // 1 (Mon) - 7 (Sun)
+    const weekStart = new Date(today);
+    weekStart.setDate(today.getDate() - (isoDow - 1));
+    weekStart.setHours(0, 0, 0, 0);
+
+    const weekEnd = new Date(weekStart);
+    weekEnd.setDate(weekStart.getDate() + 7);
+
+    const weekOrders = await knex('orders').whereBetween('deadline', [
+      weekStart.toISOString(),
+      weekEnd.toISOString(),
+    ]);
+
+    const weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    const workload = weekdays.map((label, index) => {
+      const day = new Date(weekStart);
+      day.setDate(weekStart.getDate() + index);
+      const dayStr = day.toISOString().slice(0, 10); // YYYY-MM-DD
+
+      const dayOrders = weekOrders.filter(
+        (o) => (o.deadline || '').slice(0, 10) === dayStr
+      );
+
+      return {
+        label,
+        date: dayStr,
+        orders: dayOrders.length,
+        amount: dayOrders.reduce(
+          (sum, o) => sum + Number(o.total_amount || 0),
+          0
+        ),
+      };
+    });
+
+    // Горящие заказы — пометка is_hot или ближайшие дедлайны
+    const hotOrders = await knex('orders')
+      .where('is_hot', true)
+      .orWhere('deadline', '>=', now.toISOString())
+      .orderBy('deadline', 'asc')
+      .limit(5);
+
+    res.json({
+      period,
+      totalAmount,
+      prevTotalAmount,
+      changePercent,
+      activeCount,
+      completedCount,
+      workload,
+      hotOrders,
+    });
+  } catch (err) {
+    return next(err);
+  }
+});
 // 404
 app.use((req, res) => {
   res.status(404).json({ message: 'Not found' });
