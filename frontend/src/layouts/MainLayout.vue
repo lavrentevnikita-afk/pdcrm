@@ -12,50 +12,51 @@
         />
       </div>
 
-      <template v-for="group in filteredGroups" :key="group.key">
-        <div class="sidebar-group-title">{{ group.label }}</div>
-        <ul class="sidebar-menu">
-          <li
+      <nav class="sidebar-nav">
+        <div
+          v-for="group in filteredGroups"
+          :key="group.key"
+          class="sidebar-group"
+        >
+          <div class="sidebar-group-title">
+            {{ group.label }}
+          </div>
+          <RouterLink
             v-for="item in group.items"
             :key="item.to"
-            class="sidebar-item"
+            :to="item.to"
+            class="sidebar-link"
+            :class="{ 'sidebar-link-active': isActive(item.to) }"
           >
-            <RouterLink
-              class="sidebar-link"
-              :to="item.to"
-            >
-              {{ item.label }}
-            </RouterLink>
-          </li>
-        </ul>
-      </template>
+            <span class="sidebar-link-dot" />
+            <span>{{ item.label }}</span>
+          </RouterLink>
+        </div>
+      </nav>
 
-      <div class="sidebar-footer">
-        <div>PDCRM v0.1 phase1</div>
-        <button class="sidebar-logout-btn" type="button">
-          Выход
-        </button>
-      </div>
+      <button class="sidebar-logout" type="button" @click="logout">
+        Выйти
+      </button>
     </aside>
 
-    <header class="app-header">
-      <div>
-        <div class="header-title">Печатный двор — внутренняя CRM система</div>
-        <div class="header-subtitle">Phase 1 · UI skeleton</div>
-      </div>
-      <div class="header-subtitle">
-        Пользователь не авторизован
-      </div>
-    </header>
-
-    <main class="app-content">
-      <RouterView />
+    <main class="app-main">
+      <AppHeader />
+      <section class="app-content">
+        <RouterView />
+      </section>
     </main>
   </div>
 </template>
 
 <script setup>
 import { computed, ref } from 'vue';
+import { useRoute, useRouter, RouterView, RouterLink } from 'vue-router';
+import AppHeader from '../components/AppHeader.vue';
+import { useAuthStore } from '../store/auth';
+
+const route = useRoute();
+const router = useRouter();
+const auth = useAuthStore();
 
 const menuSearch = ref('');
 
@@ -64,27 +65,27 @@ const groups = [
     key: 'main',
     label: 'Основные',
     items: [
-      { to: '/dashboard', label: 'Дэшборд' },
-      { to: '/orders', label: 'Заказы' },
-      { to: '/cash', label: 'Касса' },
+      { label: 'Дэшборд', to: '/dashboard' },
+      { label: 'Заказы', to: '/orders' },
+      { label: 'Касса', to: '/cash' },
     ],
   },
   {
-    key: 'management',
-    label: 'Управление',
+    key: 'operations',
+    label: 'Операционные',
     items: [
-      { to: '/warehouse', label: 'Склад' },
-      { to: '/staff', label: 'Персонал' },
-      { to: '/analytics', label: 'Аналитика' },
+      { label: 'Склад', to: '/warehouse' },
+      { label: 'Персонал', to: '/staff' },
+      { label: 'Аналитика', to: '/analytics' },
     ],
   },
   {
-    key: 'other',
-    label: 'Справочники и настройки',
+    key: 'system',
+    label: 'Системные',
     items: [
-      { to: '/directories', label: 'Справочники' },
-      { to: '/settings', label: 'Настройки' },
-      { to: '/permissions', label: 'Разрешения' },
+      { label: 'Справочники', to: '/directories' },
+      { label: 'Настройки', to: '/settings' },
+      { label: 'Разрешения', to: '/permissions' },
     ],
   },
 ];
@@ -102,4 +103,13 @@ const filteredGroups = computed(() => {
     }))
     .filter((group) => group.items.length > 0);
 });
+
+function isActive(path) {
+  return route.path === path;
+}
+
+function logout() {
+  auth.logout();
+  router.push({ name: 'login' });
+}
 </script>
