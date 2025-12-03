@@ -584,12 +584,6 @@ app.put('/api/orders/:id/status', authMiddleware, async (req, res, next) => {
   }
 });
 
-// 404 — JSON по умолчанию
-app.use((req, res, next) => {
-  res.status(404).json({ message: 'Not found' });
-});
-
-
 // Products & price tiers API
 
 // GET /api/product-categories — список категорий продукции
@@ -849,6 +843,12 @@ app.delete('/api/products/:id', authMiddleware, async (req, res, next) => {
     return next(err);
   }
 });
+
+// 404 — JSON по умолчанию
+app.use((req, res, next) => {
+  res.status(404).json({ message: 'Not found' });
+});
+
 
 // Global error handler
 // eslint-disable-next-line no-unused-vars
