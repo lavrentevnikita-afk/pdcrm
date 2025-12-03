@@ -262,6 +262,9 @@ function mapOrderRow(row) {
       ? row.total_amount
       : 0;
 
+  const paidAmount = Number(row.paid_amount || 0);
+  const remainingAmount = Math.max(0, Number(sum) - paidAmount);
+
   return {
     id: row.id,
     order_number: row.order_number,
@@ -273,6 +276,9 @@ function mapOrderRow(row) {
     status: row.status,
     deadline_at: deadlineAt,
     sum_total: Number(sum) || 0,
+    paid_amount: paidAmount,
+    payment_status: row.payment_status || 'unpaid',
+    remaining_amount: remainingAmount,
     is_hot: !!row.is_hot,
     created_at: row.created_at,
     updated_at: row.updated_at,
@@ -904,6 +910,254 @@ app.delete('/api/products/:id', authMiddleware, async (req, res, next) => {
 // 404 handler (must be after all routes)
 app.use((req, res, next) => {
   res.status(404).json({ message: 'Not found' });
+});
+
+
+// GET /api/cash/orders — неоплаченные и частично оплаченные заказы
+app.get('/api/cash/orders', authMiddleware, async (req, res, next) => {
+  try {
+    const {
+      client_phone: clientPhone,
+      date_from: dateFrom,
+      date_to: dateTo,
+      payment_status: paymentStatus,
+    } = req.query;
+
+    let query = knex('orders as o').leftJoin('users as u', 'o.manager_id', 'u.id');
+
+    // Исключаем отменённые заказы
+    query = query.whereNot('o.status', 'cancelled');
+
+    // Фильтр по статусу оплаты
+    if (paymentStatus) {
+      const statuses = Array.isArray(paymentStatus)
+        ? paymentStatus
+        : String(paymentStatus)
+            .split(',')
+            .map((s) => s.trim())
+            .filter(Boolean);
+
+      if (statuses.length > 0) {
+        query = query.whereIn('o.payment_status', statuses);
+      }
+    } else {
+      // По умолчанию — только неоплаченные и частично оплаченные
+      query = query.whereIn('o.payment_status', ['unpaid', 'partial']);
+    }
+
+    // Фильтр по телефону клиента
+    if (clientPhone && clientPhone.trim()) {
+      const like = `%${clientPhone.trim()}%`;
+      query = query.andWhere('o.client_phone', 'like', like);
+    }
+
+    // Фильтр по дате исполнения (дедлайну)
+    if (dateFrom) {
+      const from = new Date(dateFrom);
+      if (!Number.isNaN(from.getTime())) {
+        query = query.andWhere('o.deadline_at', '>=', from.toISOString());
+      }
+    }
+
+    if (dateTo) {
+      const to = new Date(dateTo);
+      if (!Number.isNaN(to.getTime())) {
+        to.setHours(23, 59, 59, 999);
+        query = query.andWhere('o.deadline_at', '<=', to.toISOString());
+      }
+    }
+
+    const rows = await query
+      .select('o.*', 'u.name as manager_name')
+      .orderBy('o.deadline_at', 'asc')
+      .orderBy('o.id', 'desc');
+
+    const items = rows.map(mapOrderRow);
+    return res.json({ items });
+  } catch (err) {
+    return next(err);
+  }
+});
+
+// POST /api/payments — провести оплату
+app.post('/api/payments', authMiddleware, async (req, res, next) => {
+  try {
+    const { order_id: orderId, amount, method } = req.body || {};
+
+    if (!orderId) {
+      return res.status(400).json({ message: 'order_id обязателен' });
+    }
+
+    const numericAmount = Number(amount);
+    if (!Number.isFinite(numericAmount) || numericAmount <= 0) {
+      return res
+        .status(400)
+        .json({ message: 'Сумма оплаты должна быть положительным числом' });
+    }
+
+    if (!method || typeof method !== 'string') {
+      return res.status(400).json({ message: 'Способ оплаты обязателен' });
+    }
+
+    const order = await knex('orders').where({ id: orderId }).first();
+    if (!order) {
+      return res.status(404).json({ message: 'Заказ не найден' });
+    }
+
+    const total =
+      order.sum_total != null
+        ? Number(order.sum_total)
+        : Number(order.total_amount || 0);
+
+    const currentPaid = Number(order.paid_amount || 0);
+    const newPaid = currentPaid + numericAmount;
+
+    if (total > 0 && newPaid - total > 0.01) {
+      return res
+        .status(400)
+        .json({ message: 'Сумма оплаты превышает остаток по заказу' });
+    }
+
+    let paymentStatus = 'unpaid';
+    if (newPaid <= 0.01) {
+      paymentStatus = 'unpaid';
+    } else if (total > 0 && newPaid + 0.01 >= total) {
+      paymentStatus = 'paid';
+    } else {
+      paymentStatus = 'partial';
+    }
+
+    const now = new Date().toISOString();
+
+    await knex.transaction(async (trx) => {
+      const [paymentId] = await trx('payments').insert({
+        order_id: order.id,
+        amount: numericAmount,
+        method,
+        paid_at: now,
+        created_by: req.user.id,
+        created_at: now,
+        updated_at: now,
+      });
+
+      await trx('orders')
+        .where({ id: order.id })
+        .update({
+          paid_amount: newPaid,
+          payment_status: paymentStatus,
+          updated_at: now,
+        });
+
+      // Обновим текущую кассовую смену, если она открыта
+      const currentShift = await trx('cash_shifts')
+        .whereNull('closed_at')
+        .orderBy('opened_at', 'desc')
+        .first();
+
+      if (currentShift) {
+        await trx('cash_shifts')
+          .where({ id: currentShift.id })
+          .update({
+            total_amount: Number(currentShift.total_amount || 0) + numericAmount,
+            updated_at: now,
+          });
+      }
+
+      const payment = await trx('payments').where({ id: paymentId }).first();
+
+      return res.status(201).json({
+        payment,
+        order: {
+          ...order,
+          paid_amount: newPaid,
+          payment_status: paymentStatus,
+        },
+      });
+    });
+  } catch (err) {
+    return next(err);
+  }
+});
+
+// GET /api/cash/shift/current — текущая кассовая смена
+app.get('/api/cash/shift/current', authMiddleware, async (req, res, next) => {
+  try {
+    const shift = await knex('cash_shifts')
+      .whereNull('closed_at')
+      .orderBy('opened_at', 'desc')
+      .first();
+
+    if (!shift) {
+      return res.json({ shift: null });
+    }
+
+    return res.json({ shift });
+  } catch (err) {
+    return next(err);
+  }
+});
+
+// POST /api/cash/shift/open — открыть кассовую смену
+app.post('/api/cash/shift/open', authMiddleware, async (req, res, next) => {
+  try {
+    const existing = await knex('cash_shifts')
+      .whereNull('closed_at')
+      .first();
+
+    if (existing) {
+      return res
+        .status(400)
+        .json({ message: 'Уже есть открытая кассовая смена' });
+    }
+
+    const now = new Date().toISOString();
+
+    const [id] = await knex('cash_shifts').insert({
+      opened_at: now,
+      opened_by: req.user.id,
+      total_amount: 0,
+      created_at: now,
+      updated_at: now,
+    });
+
+    const shift = await knex('cash_shifts').where({ id }).first();
+
+    return res.status(201).json({ shift });
+  } catch (err) {
+    return next(err);
+  }
+});
+
+// POST /api/cash/shift/close — закрыть кассовую смену
+app.post('/api/cash/shift/close', authMiddleware, async (req, res, next) => {
+  try {
+    const shift = await knex('cash_shifts')
+      .whereNull('closed_at')
+      .orderBy('opened_at', 'desc')
+      .first();
+
+    if (!shift) {
+      return res
+        .status(400)
+        .json({ message: 'Нет открытой кассовой смены для закрытия' });
+    }
+
+    const now = new Date().toISOString();
+
+    await knex('cash_shifts')
+      .where({ id: shift.id })
+      .update({
+        closed_at: now,
+        closed_by: req.user.id,
+        updated_at: now,
+      });
+
+    const updated = await knex('cash_shifts').where({ id: shift.id }).first();
+
+    return res.json({ shift: updated });
+  } catch (err) {
+    return next(err);
+  }
 });
 
 // Global error handler

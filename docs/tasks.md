@@ -370,16 +370,16 @@
 
 - #### 6.1. Backend: финансы
 
-  - [ ] Миграция `payments`:
-    - [ ] `order_id`, `amount`, `method`, `paid_at`, `created_by`.
-  - [ ] Миграция `cash_shifts`:
-    - [ ] `opened_at`, `closed_at`, `opened_by`, `closed_by`, `total_amount`.
-  - [ ] Добавить в `orders`:
-    - [ ] поле `paid_amount`, `payment_status`.
-  - [ ] Endpoint’ы:
-    - [ ] `GET /api/cash/orders` — неоплаченные/частично оплаченные;
-    - [ ] `POST /api/payments` — провести оплату;
-    - [ ] `GET /api/cash/shift/current` + `POST /api/cash/shift/open|close`.
+  - [x] Миграция `payments`:
+    - [x] `order_id`, `amount`, `method`, `paid_at`, `created_by`.
+  - [x] Миграция `cash_shifts`:
+    - [x] `opened_at`, `closed_at`, `opened_by`, `closed_by`, `total_amount`.
+  - [x] Добавить в `orders`:
+    - [x] поле `paid_amount`, `payment_status`.
+  - [x] Endpoint’ы:
+    - [x] `GET /api/cash/orders` — неоплаченные/частично оплаченные;
+    - [x] `POST /api/payments` — провести оплату;
+    - [x] `GET /api/cash/shift/current` + `POST /api/cash/shift/open|close`.
 
 - #### 6.2. Frontend: экран “Касса”
 
