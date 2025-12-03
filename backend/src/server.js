@@ -11,6 +11,8 @@ const knexConfig = require('../knexfile')[process.env.NODE_ENV || 'development']
 const app = express();
 const knex = knexLib(knexConfig);
 
+const { calculateOrderItemPrice, recalculateOrderTotals } = require('./orders.service');
+
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-me';
 const JWT_EXPIRES_IN = '7d';
 
@@ -585,6 +587,267 @@ app.put('/api/orders/:id/status', authMiddleware, async (req, res, next) => {
 // 404 — JSON по умолчанию
 app.use((req, res, next) => {
   res.status(404).json({ message: 'Not found' });
+});
+
+
+// Products & price tiers API
+
+// GET /api/product-categories — список категорий продукции
+app.get('/api/product-categories', authMiddleware, async (req, res, next) => {
+  try {
+    const categories = await knex('product_categories')
+      .orderBy('sort_order', 'asc')
+      .orderBy('name', 'asc');
+
+    res.json(
+      categories.map((c) => ({
+        id: c.id,
+        name: c.name,
+        slug: c.slug,
+        sort_order: c.sort_order,
+      }))
+    );
+  } catch (err) {
+    return next(err);
+  }
+});
+
+// GET /api/products — список продукции с фильтрами по категории и поиску
+app.get('/api/products', authMiddleware, async (req, res, next) => {
+  try {
+    const { category_id: categoryId, search } = req.query;
+
+    let query = knex('products as p')
+      .leftJoin('product_categories as c', 'p.category_id', 'c.id')
+      .where('p.is_active', 1);
+
+    if (categoryId) {
+      query = query.andWhere('p.category_id', Number(categoryId));
+    }
+
+    if (search) {
+      const like = `%${search.trim()}%`;
+      query = query.andWhere((qb) => {
+        qb.where('p.name', 'like', like).orWhere('p.comment', 'like', like);
+      });
+    }
+
+    const rows = await query
+      .select(
+        'p.id',
+        'p.name',
+        'p.category_id',
+        'p.base_price',
+        'p.unit',
+        'p.comment',
+        'c.name as category_name'
+      )
+      .orderBy('c.sort_order', 'asc')
+      .orderBy('p.name', 'asc');
+
+    res.json(
+      rows.map((row) => ({
+        id: row.id,
+        name: row.name,
+        category_id: row.category_id,
+        category_name: row.category_name,
+        base_price: Number(row.base_price || 0),
+        unit: row.unit,
+        comment: row.comment,
+      }))
+    );
+  } catch (err) {
+    return next(err);
+  }
+});
+
+// GET /api/products/:id — карточка товара
+app.get('/api/products/:id', authMiddleware, async (req, res, next) => {
+  try {
+    const { id } = req.params;
+
+    const product = await knex('products as p')
+      .leftJoin('product_categories as c', 'p.category_id', 'c.id')
+      .where('p.id', Number(id))
+      .first(
+        'p.id',
+        'p.name',
+        'p.category_id',
+        'p.base_price',
+        'p.unit',
+        'p.comment',
+        'p.is_active',
+        'c.name as category_name'
+      );
+
+    if (!product) {
+      return res.status(404).json({ message: 'Товар не найден' });
+    }
+
+    res.json({
+      id: product.id,
+      name: product.name,
+      category_id: product.category_id,
+      category_name: product.category_name,
+      base_price: Number(product.base_price || 0),
+      unit: product.unit,
+      comment: product.comment,
+      is_active: !!product.is_active,
+    });
+  } catch (err) {
+    return next(err);
+  }
+});
+
+// GET /api/products/:id/price-tiers — ценовые уровни по тиражам
+app.get(
+  '/api/products/:id/price-tiers',
+  authMiddleware,
+  async (req, res, next) => {
+    try {
+      const { id } = req.params;
+
+      const product = await knex('products').where({ id: Number(id) }).first();
+      if (!product) {
+        return res.status(404).json({ message: 'Товар не найден' });
+      }
+
+      const tiers = await knex('product_price_tiers')
+        .where({ product_id: Number(id) })
+        .orderBy('min_qty', 'asc');
+
+      res.json(
+        tiers.map((t) => ({
+          id: t.id,
+          product_id: t.product_id,
+          min_qty: t.min_qty,
+          max_qty: t.max_qty,
+          price_per_unit:
+            t.price_per_unit != null ? Number(t.price_per_unit) : null,
+          discount_percent:
+            t.discount_percent != null ? Number(t.discount_percent) : null,
+        }))
+      );
+    } catch (err) {
+      return next(err);
+    }
+  }
+);
+
+// Helper to check admin/director rights for справочники
+function ensureCanManageCatalog(req, res) {
+  const user = req.user || {};
+  const allowedRoles = ['admin', 'director'];
+
+  if (!allowedRoles.includes(user.role)) {
+    return res
+      .status(403)
+      .json({ message: 'Недостаточно прав для изменения справочников' });
+  }
+
+  return null;
+}
+
+// POST /api/products — создание товара (админ/директор)
+app.post('/api/products', authMiddleware, async (req, res, next) => {
+  try {
+    const roleError = ensureCanManageCatalog(req, res);
+    if (roleError) return roleError;
+
+    const { name, category_id: categoryId, base_price, unit, comment } =
+      req.body || {};
+
+    if (!name) {
+      return res.status(400).json({ message: 'Название обязательно' });
+    }
+
+    const [id] = await knex('products').insert(
+      {
+        name,
+        category_id: categoryId || null,
+        base_price: base_price || 0,
+        unit: unit || 'шт.',
+        comment: comment || null,
+        is_active: 1,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      },
+      ['id']
+    );
+
+    const productId = typeof id === 'object' && id.id ? id.id : id;
+
+    const created = await knex('products').where({ id: productId }).first();
+
+    res.status(201).json(created);
+  } catch (err) {
+    return next(err);
+  }
+});
+
+// PUT /api/products/:id — обновление товара (админ/директор)
+app.put('/api/products/:id', authMiddleware, async (req, res, next) => {
+  try {
+    const roleError = ensureCanManageCatalog(req, res);
+    if (roleError) return roleError;
+
+    const { id } = req.params;
+    const { name, category_id: categoryId, base_price, unit, comment, is_active } =
+      req.body || {};
+
+    const existing = await knex('products')
+      .where({ id: Number(id) })
+      .first();
+
+    if (!existing) {
+      return res.status(404).json({ message: 'Товар не найден' });
+    }
+
+    await knex('products')
+      .where({ id: Number(id) })
+      .update({
+        name: name != null ? name : existing.name,
+        category_id:
+          categoryId !== undefined ? categoryId || null : existing.category_id,
+        base_price:
+          base_price !== undefined ? base_price : existing.base_price,
+        unit: unit != null ? unit : existing.unit,
+        comment: comment !== undefined ? comment : existing.comment,
+        is_active:
+          is_active !== undefined ? (is_active ? 1 : 0) : existing.is_active,
+        updated_at: new Date().toISOString(),
+      });
+
+    const updated = await knex('products').where({ id: Number(id) }).first();
+
+    res.json(updated);
+  } catch (err) {
+    return next(err);
+  }
+});
+
+// DELETE /api/products/:id — удаление товара (админ/директор)
+app.delete('/api/products/:id', authMiddleware, async (req, res, next) => {
+  try {
+    const roleError = ensureCanManageCatalog(req, res);
+    if (roleError) return roleError;
+
+    const { id } = req.params;
+
+    const existing = await knex('products')
+      .where({ id: Number(id) })
+      .first();
+
+    if (!existing) {
+      return res.status(404).json({ message: 'Товар не найден' });
+    }
+
+    await knex('products').where({ id: Number(id) }).del();
+
+    res.status(204).send();
+  } catch (err) {
+    return next(err);
+  }
 });
 
 // Global error handler

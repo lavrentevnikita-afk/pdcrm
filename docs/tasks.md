@@ -318,30 +318,30 @@
 
 - #### 5.1. Backend: справочник продукции и цен
 
-  - [ ] Миграция `product_categories`.
-  - [ ] Миграция `products`:
-    - [ ] `name`, `category_id`, `base_price`, `unit`, `comment`.
-  - [ ] Миграция `product_price_tiers`:
-    - [ ] `product_id`, `min_qty`, `max_qty`, `price_per_unit` или `discount_percent`.
-  - [ ] Сиды:
-    - [ ] базовые категории (полиграфия, текстиль, керамика и т.д.);
-    - [ ] несколько товаров по категориям с ценами и тиражами.
-  - [ ] Endpoint’ы:
-    - [ ] `GET /api/products` (с фильтрами по категории/поиску);
-    - [ ] `GET /api/products/:id/price-tiers`;
-    - [ ] `POST/PUT/DELETE` для админки (справочники).
+  - [x] Миграция `product_categories`.
+  - [x] Миграция `products`:
+    - [x] `name`, `category_id`, `base_price`, `unit`, `comment`.
+  - [x] Миграция `product_price_tiers`:
+    - [x] `product_id`, `min_qty`, `max_qty`, `price_per_unit` или `discount_percent`.
+  - [x] Сиды:
+    - [x] базовые категории (полиграфия, текстиль, керамика и т.д.);
+    - [x] несколько товаров по категориям с ценами и тиражами.
+  - [x] Endpoint’ы:
+    - [x] `GET /api/products` (с фильтрами по категории/поиску);
+    - [x] `GET /api/products/:id/price-tiers`;
+    - [x] `POST/PUT/DELETE` для админки (справочники).
 
 - #### 5.2. Backend: позиции заказа
 
-  - [ ] Миграция `order_items`:
-    - [ ] `order_id`, `product_id`, `product_name`,
-    - [ ] `quantity`, `unit`,
-    - [ ] `base_price`, `unit_price`,  
+  - [x] Миграция `order_items`:
+    - [x] `order_id`, `product_id`, `product_name`,
+    - [x] `quantity`, `unit`,
+    - [x] `base_price`, `unit_price`,  
       `discount_percent`, `discount_value`,  
       `total_price`, `comment`.
-  - [ ] В `orders.service`:
-    - [ ] функция расчёта позиции по тиражу и ценовым уровням;
-    - [ ] функция пересчёта итогов заказа (сумма, скидка, остаток).
+  - [x] В `orders.service`:
+    - [x] функция расчёта позиции по тиражу и ценовым уровням;
+    - [x] функция пересчёта итогов заказа (сумма, скидка, остаток).
 
 - #### 5.3. Frontend: калькулятор в drawer
 
