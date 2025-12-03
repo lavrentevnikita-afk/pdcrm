@@ -5,7 +5,7 @@
         <div>
           <div class="drawer-title">Новый заказ</div>
           <div class="drawer-subtitle">
-            Минимальная версия создания заказа: клиент, дедлайн и сумма. Остальное добавим в следующих фазах.
+            Клиент, дедлайн и калькулятор заказа с позициями и скидками.
           </div>
         </div>
         <button type="button" class="drawer-close" @click="handleClose">×</button>
@@ -16,87 +16,78 @@
           {{ error }}
         </div>
 
-        <form @submit.prevent="handleSubmit" class="drawer-form">
-          <div class="drawer-section">
+        <div class="drawer-grid">
+          <section class="drawer-section">
             <div class="drawer-section-title">Клиент</div>
 
             <div class="drawer-radio-row">
               <label class="drawer-radio">
                 <input
+                  v-model="form.clientType"
                   type="radio"
-                  value="new"
-                  v-model="clientMode"
+                  value="retail"
                 />
-                <span>Новый клиент</span>
+                <span>Розница</span>
               </label>
-              <label class="drawer-radio drawer-radio--disabled">
+              <label class="drawer-radio">
                 <input
+                  v-model="form.clientType"
                   type="radio"
-                  value="existing"
-                  v-model="clientMode"
-                  disabled
+                  value="org"
                 />
-                <span>Существующий клиент (будет позже)</span>
+                <span>Организация</span>
               </label>
             </div>
 
-            <div class="drawer-grid-2">
+            <div class="drawer-two-cols">
               <label class="drawer-field">
-                <span class="drawer-label">Имя</span>
+                <span class="drawer-label">
+                  Имя / организация
+                </span>
                 <input
-                  v-model="form.clientFirstName"
+                  v-model="form.clientName"
                   type="text"
-                  placeholder="Иван"
+                  placeholder="Клиент или компания"
                 />
               </label>
 
-              <label class="drawer-field">
-                <span class="drawer-label">Фамилия</span>
-                <input
-                  v-model="form.clientLastName"
-                  type="text"
-                  placeholder="Иванов"
-                />
-              </label>
-            </div>
-
-            <div class="drawer-grid-2">
               <label class="drawer-field">
                 <span class="drawer-label">Телефон</span>
                 <input
                   v-model="form.clientPhone"
                   type="tel"
-                  placeholder="+7 900 000-00-00"
-                  @blur="ensurePhoneMask"
-                />
-              </label>
-
-              <label class="drawer-field">
-                <span class="drawer-label">Email</span>
-                <input
-                  v-model="form.clientEmail"
-                  type="email"
-                  placeholder="client@example.com"
+                  placeholder="+7…"
                 />
               </label>
             </div>
-          </div>
-
-          <div class="drawer-section">
-            <div class="drawer-section-title">Параметры заказа</div>
 
             <label class="drawer-field">
-              <span class="drawer-label">Название заказа</span>
+              <span class="drawer-label">
+                Название заказа
+              </span>
               <input
                 v-model="form.title"
                 type="text"
-                placeholder="Например, визитки для ИП Смирнов"
+                placeholder="Например: Визитки для ООО «Ромашка»"
               />
             </label>
 
-            <div class="drawer-grid-2">
+            <label class="drawer-field">
+              <span class="drawer-label">Комментарий к заказу</span>
+              <textarea
+                v-model="form.description"
+                rows="3"
+                placeholder="Требования к макету, сроки, комментарии…"
+              />
+            </label>
+
+            <div class="drawer-section-title drawer-section-title--mt">
+              Дедлайн
+            </div>
+
+            <div class="drawer-two-cols">
               <label class="drawer-field">
-                <span class="drawer-label">Дата дедлайна</span>
+                <span class="drawer-label">Дата</span>
                 <input
                   v-model="form.deadlineDate"
                   type="date"
@@ -112,81 +103,137 @@
               </label>
             </div>
 
-            <label class="drawer-field">
-              <span class="drawer-label">Сумма заказа, ₽</span>
-              <input
-                v-model.number="form.sumTotal"
-                type="number"
-                min="0"
-                step="100"
-                placeholder="0"
-              />
-            </label>
-
             <label class="drawer-checkbox">
               <input
-                type="checkbox"
                 v-model="form.isHot"
+                type="checkbox"
               />
-              <span>Отметить как «горящий» заказ</span>
+              <span>Горящий заказ</span>
             </label>
-          </div>
+          </section>
 
-          <div class="drawer-section">
-            <div class="drawer-section-title">Состав заказа (упрощённо)</div>
-
-            <div class="drawer-grid-2">
-              <label class="drawer-field">
-                <span class="drawer-label">Продукция</span>
-                <textarea
-                  v-model="form.productsText"
-                  rows="3"
-                  placeholder="Кратко: визитки 500 шт, пакеты 100 шт…"
-                ></textarea>
-              </label>
-
-              <label class="drawer-field">
-                <span class="drawer-label">Постпечатка</span>
-                <textarea
-                  v-model="form.postprintText"
-                  rows="3"
-                  placeholder="Ламинация, тиснение, вырубка…"
-                ></textarea>
-              </label>
+          <section class="drawer-section">
+            <div class="drawer-section-title">
+              Продукция
             </div>
 
-            <div class="drawer-hint">
-              Эти поля пока носят информационный характер и не участвуют в расчётах.
+            <div class="drawer-help">
+              Добавьте позиции заказа. Цена за единицу подбирается автоматически по тиражу.
             </div>
-          </div>
 
-          <div class="drawer-footer">
+            <div class="drawer-items-list">
+              <OrderItemRow
+                v-for="item in productItems"
+                :key="item.id"
+                v-model="itemsMap[item.id]"
+                :categories="productCategories"
+                @remove="removeItem"
+              />
+            </div>
+
             <button
               type="button"
-              class="btn-secondary"
-              @click="handleClose"
-              :disabled="saving"
+              class="btn-secondary drawer-add-btn"
+              @click="addItem('product')"
             >
-              Отмена
+              + Продукция
             </button>
+
+            <div class="drawer-section-title drawer-section-title--mt">
+              Постпечатка
+            </div>
+
+            <div class="drawer-help">
+              Ламинация, вырубка, фольгирование и другие дополнительные услуги.
+            </div>
+
+            <div class="drawer-items-list">
+              <OrderItemRow
+                v-for="item in postpressItems"
+                :key="item.id"
+                v-model="itemsMap[item.id]"
+                :categories="productCategories"
+                @remove="removeItem"
+              />
+            </div>
+
             <button
-              type="submit"
-              class="btn-primary"
-              :disabled="saving"
+              type="button"
+              class="btn-secondary drawer-add-btn"
+              @click="addItem('postpress')"
             >
-              <span v-if="!saving">Создать заказ</span>
-              <span v-else>Создание…</span>
+              + Постпечатка
             </button>
-          </div>
-        </form>
+
+            <div class="drawer-section-title drawer-section-title--mt">
+              Итоги
+            </div>
+
+            <div class="drawer-totals">
+              <div class="drawer-totals-row">
+                <span>Сумма позиций</span>
+                <span>{{ formatMoney(itemsSubtotal) }}</span>
+              </div>
+
+              <div class="drawer-two-cols">
+                <label class="drawer-field">
+                  <span class="drawer-label">Скидка на заказ, %</span>
+                  <input
+                    v-model.number="form.orderDiscountPercent"
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="0.1"
+                  />
+                </label>
+
+                <label class="drawer-field">
+                  <span class="drawer-label">Скидка, ₽</span>
+                  <input
+                    v-model.number="form.orderDiscountValue"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                  />
+                </label>
+              </div>
+
+              <div class="drawer-totals-row drawer-totals-row--total">
+                <span>Итого к оплате</span>
+                <span>{{ formatMoney(totalToPay) }}</span>
+              </div>
+            </div>
+          </section>
+        </div>
+      </div>
+
+      <div class="drawer-footer">
+        <button
+          type="button"
+          class="btn-secondary"
+          @click="handleClose"
+          :disabled="saving"
+        >
+          Отмена
+        </button>
+        <button
+          type="button"
+          class="btn-primary"
+          @click="handleSubmit"
+          :disabled="saving || !canSubmit"
+        >
+          <span v-if="saving">Сохраняем…</span>
+          <span v-else>Создать заказ</span>
+        </button>
       </div>
     </div>
   </div>
 </template>
 
 <script setup>
-import { reactive, ref, watch } from 'vue';
-import axios from 'axios';
+import { computed, reactive, ref, watch } from 'vue';
+import api from '../../utils/apiClient';
+import OrderItemRow from './OrderItemRow.vue';
 
 const props = defineProps({
   visible: {
@@ -197,121 +244,236 @@ const props = defineProps({
 
 const emit = defineEmits(['close', 'created']);
 
-const clientMode = ref('new');
-
-const form = reactive({
-  clientFirstName: '',
-  clientLastName: '',
-  clientPhone: '+7 ',
-  clientEmail: '',
-  title: '',
-  deadlineDate: '',
-  deadlineTime: '',
-  sumTotal: 0,
-  isHot: false,
-  productsText: '',
-  postprintText: '',
-});
-
 const saving = ref(false);
 const error = ref('');
+
+const form = reactive({
+  clientType: 'retail',
+  clientName: '',
+  clientPhone: '',
+  title: '',
+  description: '',
+  deadlineDate: '',
+  deadlineTime: '',
+  isHot: false,
+  orderDiscountPercent: 0,
+  orderDiscountValue: 0,
+});
+
+const items = ref([]);
+const productCategories = ref([]);
+
+const itemsMap = computed({
+  get() {
+    const map = {};
+    for (const item of items.value) {
+      map[item.id] = item;
+    }
+    return map;
+  },
+  set(newMap) {
+    items.value = Object.values(newMap);
+  },
+});
+
+const productItems = computed(() =>
+  items.value.filter((i) => i.type === 'product')
+);
+const postpressItems = computed(() =>
+  items.value.filter((i) => i.type === 'postpress')
+);
+
+const itemsSubtotal = computed(() =>
+  items.value.reduce(
+    (sum, item) => sum + (Number(item.totalPrice) || 0),
+    0
+  )
+);
+
+const discountGuard = {
+  fromPercent: false,
+  fromValue: false,
+};
+
+watch(
+  () => form.orderDiscountPercent,
+  (val) => {
+    if (discountGuard.fromValue) return;
+    discountGuard.fromPercent = true;
+    const subtotal = itemsSubtotal.value;
+    const percent = Number(val) || 0;
+    form.orderDiscountValue =
+      subtotal > 0 ? (subtotal * percent) / 100 : 0;
+    discountGuard.fromPercent = false;
+  }
+);
+
+watch(
+  () => form.orderDiscountValue,
+  (val) => {
+    if (discountGuard.fromPercent) return;
+    discountGuard.fromValue = true;
+    const subtotal = itemsSubtotal.value;
+    const v = Number(val) || 0;
+    form.orderDiscountPercent =
+      subtotal > 0 ? (v / subtotal) * 100 : 0;
+    discountGuard.fromValue = false;
+  }
+);
+
+const totalToPay = computed(() => {
+  const subtotal = itemsSubtotal.value;
+  const discount = Number(form.orderDiscountValue) || 0;
+  const total = subtotal - discount;
+  return total > 0 ? total : 0;
+});
+
+const canSubmit = computed(
+  () =>
+    !!form.deadlineDate &&
+    !!form.title &&
+    items.value.length > 0 &&
+    itemsSubtotal.value > 0
+);
 
 watch(
   () => props.visible,
   (val) => {
     if (val) {
       resetForm();
+      loadCategories();
+      if (!items.value.length) {
+        addItem('product');
+      }
     }
   }
 );
 
 function resetForm() {
-  form.clientFirstName = '';
-  form.clientLastName = '';
-  form.clientPhone = '+7 ';
-  form.clientEmail = '';
+  form.clientType = 'retail';
+  form.clientName = '';
+  form.clientPhone = '';
   form.title = '';
+  form.description = '';
   form.deadlineDate = '';
   form.deadlineTime = '';
-  form.sumTotal = 0;
   form.isHot = false;
-  form.productsText = '';
-  form.postprintText = '';
+  form.orderDiscountPercent = 0;
+  form.orderDiscountValue = 0;
+  items.value = [];
   error.value = '';
-  clientMode.value = 'new';
 }
 
-function ensurePhoneMask() {
-  if (!form.clientPhone || !form.clientPhone.startsWith('+7')) {
-    form.clientPhone = '+7 ';
+function addItem(type = 'product') {
+  items.value.push({
+    id: Date.now() + Math.random(),
+    type,
+    productId: undefined,
+    productName: '',
+    categoryId: undefined,
+    quantity: 1,
+    unit: 'шт.',
+    basePrice: 0,
+    unitPrice: 0,
+    discountPercent: 0,
+    discountValue: 0,
+    totalPrice: 0,
+    comment: '',
+  });
+}
+
+function removeItem(id) {
+  items.value = items.value.filter((i) => i.id !== id);
+}
+
+async function loadCategories() {
+  try {
+    const { data } = await api.get('/product-categories');
+    productCategories.value = data || [];
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.error(e);
+  }
+}
+
+function formatMoney(value) {
+  const num = Number(value) || 0;
+  return num.toLocaleString('ru-RU', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+}
+
+function buildDeadlineIso() {
+  if (!form.deadlineDate) return null;
+  const date = form.deadlineDate;
+  const time = form.deadlineTime || '18:00';
+  return `${date}T${time}:00`;
+}
+
+async function handleSubmit() {
+  if (!canSubmit.value || saving.value) return;
+
+  saving.value = true;
+  error.value = '';
+
+  try {
+    const deadlineAt = buildDeadlineIso();
+    if (!deadlineAt) {
+      error.value = 'Укажите дату дедлайна';
+      saving.value = false;
+      return;
+    }
+
+    if (!items.value.length) {
+      error.value = 'Добавьте хотя бы одну позицию заказа';
+      saving.value = false;
+      return;
+    }
+
+    const payloadItems = items.value.map((item) => ({
+      product_id: item.productId,
+      product_name: item.productName || 'Позиция заказа',
+      quantity: item.quantity,
+      unit: item.unit,
+      base_price: item.basePrice,
+      unit_price: item.unitPrice,
+      discount_percent: item.discountPercent,
+      discount_value: item.discountValue,
+      total_price: item.totalPrice,
+      comment: item.comment || null,
+    }));
+
+    const payload = {
+      title:
+        form.title ||
+        form.clientName ||
+        'Новый заказ',
+      client_name: form.clientName || null,
+      client_phone: form.clientPhone || null,
+      deadline_at: deadlineAt,
+      sum_total: totalToPay.value,
+      is_hot: form.isHot,
+      items: payloadItems,
+    };
+
+    const { data } = await api.post('/orders', payload);
+    emit('created', data);
+    resetForm();
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.error(e);
+    error.value =
+      e.response?.data?.message ||
+      'Ошибка при сохранении заказа';
+  } finally {
+    saving.value = false;
   }
 }
 
 function handleClose() {
   if (saving.value) return;
   emit('close');
-}
-
-function buildDeadlineIso() {
-  if (!form.deadlineDate) return null;
-  const date = form.deadlineDate;
-  const time = form.deadlineTime || '09:00';
-  const iso = new Date(`${date}T${time}:00`);
-  if (Number.isNaN(iso.getTime())) return null;
-  return iso.toISOString();
-}
-
-async function handleSubmit() {
-  error.value = '';
-
-  const clientName = `${form.clientFirstName || ''} ${form.clientLastName || ''}`.trim();
-  if (!clientName) {
-    error.value = 'Заполните хотя бы имя клиента.';
-    return;
-  }
-
-  if (!form.clientPhone || !form.clientPhone.startsWith('+7')) {
-    error.value = 'Укажите телефон клиента в формате +7…';
-    return;
-  }
-
-  if (!form.title) {
-    error.value = 'Укажите название заказа.';
-    return;
-  }
-
-  const deadlineIso = buildDeadlineIso();
-  if (!deadlineIso) {
-    error.value = 'Укажите корректный дедлайн (дата и время).';
-    return;
-  }
-
-  if (!form.sumTotal || form.sumTotal < 0) {
-    error.value = 'Укажите сумму заказа больше нуля.';
-    return;
-  }
-
-  const payload = {
-    title: form.title,
-    client_name: clientName,
-    client_phone: form.clientPhone,
-    deadline_at: deadlineIso,
-    sum_total: form.sumTotal,
-    is_hot: form.isHot,
-  };
-
-  saving.value = true;
-  try {
-    const { data } = await axios.post('/api/orders', payload);
-    emit('created', data);
-    resetForm();
-  } catch (err) {
-    console.error('Create order error', err);
-    error.value =
-      err?.response?.data?.message || 'Не удалось создать заказ. Попробуйте ещё раз.';
-  } finally {
-    saving.value = false;
-  }
 }
 </script>
 
@@ -506,4 +668,39 @@ async function handleSubmit() {
   font-size: 13px;
   color: var(--color-error);
 }
+
+
+.drawer-items-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.drawer-add-btn {
+  width: 100%;
+  justify-content: center;
+}
+
+.drawer-totals {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--color-bg-soft);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.drawer-totals-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 14px;
+}
+
+.drawer-totals-row--total {
+  font-weight: 600;
+  font-size: 15px;
+}
+
 </style>

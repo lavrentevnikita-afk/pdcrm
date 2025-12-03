@@ -397,6 +397,7 @@ app.post('/api/orders', authMiddleware, async (req, res, next) => {
       deadline_at: deadlineAtRaw,
       sum_total: sumTotalRaw,
       is_hot: isHotRaw,
+      items: rawItems,
     } = req.body || {};
 
     if (!title || !deadlineAtRaw) {
@@ -413,7 +414,7 @@ app.post('/api/orders', authMiddleware, async (req, res, next) => {
     }
 
     const deadlineIso = deadlineDate.toISOString();
-    const sum = Number(sumTotalRaw) || 0;
+    const initialSum = Number(sumTotalRaw) || 0;
 
     // Генерация номера заказа
     const lastOrder = await knex('orders').orderBy('id', 'desc').first();
@@ -428,7 +429,7 @@ app.post('/api/orders', authMiddleware, async (req, res, next) => {
     }
     const orderNumber = `PD-${String(nextNumber).padStart(4, '0')}`;
 
-    const insertData = {
+    const [insertedId] = await knex('orders').insert({
       order_number: orderNumber,
       title,
       client_name: clientName || null,
@@ -437,12 +438,66 @@ app.post('/api/orders', authMiddleware, async (req, res, next) => {
       status: status || 'new',
       deadline_at: deadlineIso,
       deadline: deadlineIso,
-      sum_total: sum,
-      total_amount: sum,
+      sum_total: initialSum,
+      total_amount: initialSum,
       is_hot: !!isHotRaw,
-    };
+    });
 
-    const [insertedId] = await knex('orders').insert(insertData);
+    // Если переданы позиции заказа — сохраняем их и пересчитываем сумму
+    if (Array.isArray(rawItems) && rawItems.length > 0) {
+      for (const rawItem of rawItems) {
+        const quantity = Number(rawItem.quantity) || 0;
+        if (!quantity) continue;
+
+        const productId =
+          rawItem.product_id != null ? Number(rawItem.product_id) : null;
+
+        let basePrice = Number(rawItem.base_price) || 0;
+        let unitPrice = Number(rawItem.unit_price) || 0;
+        let discountPercent = Number(rawItem.discount_percent) || 0;
+        let discountValue = Number(rawItem.discount_value) || 0;
+        let totalPrice = Number(rawItem.total_price) || 0;
+
+        // Если цена не передана с фронта — рассчитываем по тиражу и прайсу
+        if ((!unitPrice || !totalPrice) && productId && quantity > 0) {
+          const pricing = await calculateOrderItemPrice(
+            knex,
+            productId,
+            quantity
+          );
+          basePrice = pricing.basePrice;
+          unitPrice = pricing.unitPrice;
+
+          const lineBase = unitPrice * quantity;
+          if (!discountValue && discountPercent) {
+            discountValue = (lineBase * discountPercent) / 100;
+          }
+          totalPrice = totalPrice || lineBase - discountValue;
+        }
+
+        const productName =
+          rawItem.product_name ||
+          rawItem.productName ||
+          'Позиция заказа';
+
+        await knex('order_items').insert({
+          order_id: insertedId,
+          product_id: productId,
+          product_name: productName,
+          quantity,
+          unit: rawItem.unit || 'шт.',
+          base_price: basePrice,
+          unit_price: unitPrice,
+          discount_percent: discountPercent,
+          discount_value: discountValue,
+          total_price: totalPrice,
+          comment: rawItem.comment || null,
+        });
+      }
+
+      // Пересчёт итогов по заказу на основе позиций
+      await recalculateOrderTotals(knex, insertedId);
+    }
 
     const created = await knex('orders as o')
       .leftJoin('users as u', 'o.manager_id', 'u.id')
@@ -584,7 +639,9 @@ app.put('/api/orders/:id/status', authMiddleware, async (req, res, next) => {
   }
 });
 
+// 404 — JSON по умолчанию
 // Products & price tiers API
+
 
 // GET /api/product-categories — список категорий продукции
 app.get('/api/product-categories', authMiddleware, async (req, res, next) => {
@@ -844,11 +901,10 @@ app.delete('/api/products/:id', authMiddleware, async (req, res, next) => {
   }
 });
 
-// 404 — JSON по умолчанию
+// 404 handler (must be after all routes)
 app.use((req, res, next) => {
   res.status(404).json({ message: 'Not found' });
 });
-
 
 // Global error handler
 // eslint-disable-next-line no-unused-vars
