@@ -4,12 +4,12 @@
       <div>
         <div class="page-title">Касса</div>
         <div class="page-subtitle">
-          Раздел для оплаты заказов и контроля кассовой смены.
+          Раздел для оплаты заказов и учёта движения средств.
         </div>
       </div>
 
       <div class="page-actions">
-        <button class="btn-secondary" type="button" @click="reloadAll">
+        <button type="button" class="btn-secondary" @click="reloadAll">
           Обновить
         </button>
       </div>
@@ -18,15 +18,15 @@
     <div class="cash-layout">
       <div class="cash-main">
         <!-- Фильтры -->
-        <div class="cash-filters">
-          <div class="cash-filters-row">
+        <div class="cash-filters-card">
+          <div class="cash-filters">
             <div class="cash-filters-group">
               <label class="cash-filter-label">
                 Телефон клиента
                 <input
                   v-model="filters.clientPhone"
                   type="text"
-                  placeholder="+7..."
+                  placeholder="+7 900..."
                   class="cash-filter-input"
                 />
               </label>
@@ -65,38 +65,38 @@
             </div>
 
             <div class="cash-filters-actions">
-              <button class="btn-secondary" type="button" @click="resetFilters">
+              <button type="button" class="btn-secondary" @click="resetFilters">
                 Сбросить
               </button>
-              <button class="btn-primary" type="button" @click="applyFilters">
+              <button type="button" class="btn-primary" @click="applyFilters">
                 Применить
               </button>
             </div>
           </div>
         </div>
 
-        <!-- Список заказов -->
-        <div class="cash-table-card">
-          <div class="cash-table-header-row">
-            <div class="cash-table-title">Заказы к оплате</div>
-            <div class="cash-table-caption">
-              {{ orders.length }} {{ orders.length === 1 ? 'заказ' : 'заказов' }}
+        <!-- Таблица заказов -->
+        <div class="cash-card">
+          <div class="cash-card-header">
+            <div>
+              <div class="cash-card-title">Заказы к оплате</div>
+              <div class="cash-card-subtitle">
+                {{ orders.length }} {{ orders.length === 1 ? 'заказ' : 'заказов' }}
+              </div>
             </div>
           </div>
 
           <div v-if="loading" class="page-loading">
             Загрузка заказов…
           </div>
-
-          <div v-if="error" class="page-error">
+          <div v-else-if="error" class="page-error">
             {{ error }}
           </div>
-
-          <div v-if="!loading && !orders.length && !error" class="cash-empty">
+          <div v-else-if="!orders.length" class="cash-empty">
             Нет заказов, подходящих под выбранные фильтры.
           </div>
 
-          <div v-if="!loading && orders.length" class="cash-table-wrapper">
+          <div v-else class="cash-table-wrapper">
             <table class="cash-table">
               <thead>
                 <tr>
@@ -144,16 +144,16 @@
                   </td>
                   <td class="cash-col-status">
                     <span
-                      class="cash-status-pill"
-                      :class="'cash-status-' + (order.payment_status || 'unpaid')"
+                      class="cash-status"
+                      :class="'cash-status--' + (order.payment_status || 'unpaid')"
                     >
                       {{ paymentStatusText(order.payment_status) }}
                     </span>
                   </td>
                   <td class="cash-col-actions">
                     <button
-                      class="btn-primary btn-sm"
                       type="button"
+                      class="btn-primary btn-sm"
                       :disabled="order.remaining_amount <= 0 || paying"
                       @click="openPaymentModal(order)"
                     >
@@ -167,50 +167,51 @@
         </div>
       </div>
 
-      <!-- Боковая панель с итогами -->
+      <!-- Боковая панель -->
       <aside class="cash-sidebar">
-        <div class="cash-summary-card">
-          <div class="cash-summary-title">Итоги кассы</div>
+        <div class="cash-card">
+          <div class="cash-card-header">
+            <div class="cash-card-title">Итоги кассы</div>
+          </div>
 
-          <div v-if="shiftLoading" class="cash-summary-muted">
+          <div v-if="shiftLoading" class="page-loading">
             Загрузка данных по смене…
           </div>
-
-          <div v-if="shiftError" class="cash-summary-error">
+          <div v-else-if="shiftError" class="page-error">
             {{ shiftError }}
           </div>
-
-          <template v-if="!shiftLoading && !shiftError">
-            <div v-if="shift" class="cash-summary-block">
-              <div class="cash-summary-row">
-                <span>Открыта смена</span>
-                <span>{{ formatDate(shift.opened_at) }}</span>
-              </div>
-              <div class="cash-summary-row">
-                <span>Сумма оплат за смену</span>
-                <span class="cash-summary-amount">
-                  {{ formatMoney(shift.total_amount) }}
-                </span>
-              </div>
+          <div v-else-if="!shift">
+            <div class="cash-empty">
+              Нет открытой кассовой смены. Оплаты будут учитываться в заказах,
+              но не попадут в статистику смены.
             </div>
-
-            <div v-else class="cash-summary-empty">
-              Нет открытой кассовой смены.
-              <br />
-              Оплаты всё равно учитываются в заказах, но не попадают в
-              статистику смены.
+          </div>
+          <div v-else class="cash-summary">
+            <div class="cash-summary-row">
+              <span>Открыта смена</span>
+              <span>{{ formatDate(shift.opened_at) }}</span>
             </div>
-          </template>
+            <div class="cash-summary-row">
+              <span>Сумма оплат за смену</span>
+              <span class="cash-summary-amount">
+                {{ formatMoney(shift.total_amount) }}
+              </span>
+            </div>
+          </div>
         </div>
       </aside>
     </div>
 
     <!-- Модалка оплаты -->
-    <div v-if="isPaymentModalOpen" class="cash-modal-backdrop" @click.self="closePaymentModal">
+    <div
+      v-if="isPaymentModalOpen"
+      class="cash-modal-backdrop"
+      @click.self="closePaymentModal"
+    >
       <div class="cash-modal">
         <div class="cash-modal-header">
           <div class="cash-modal-title">Оплата заказа</div>
-          <button class="cash-modal-close" type="button" @click="closePaymentModal">
+          <button type="button" class="cash-modal-close" @click="closePaymentModal">
             ×
           </button>
         </div>
@@ -265,16 +266,12 @@
           </div>
 
           <div class="cash-modal-footer">
-            <button
-              class="btn-secondary"
-              type="button"
-              @click="closePaymentModal"
-            >
+            <button type="button" class="btn-secondary" @click="closePaymentModal">
               Отмена
             </button>
             <button
-              class="btn-primary"
               type="button"
+              class="btn-primary"
               :disabled="paying"
               @click="submitPayment"
             >
@@ -286,7 +283,7 @@
       </div>
     </div>
 
-    <!-- Тосты -->
+    <!-- Тост -->
     <div v-if="toastVisible" class="cash-toast" :class="'cash-toast--' + toastType">
       {{ toastMessage }}
     </div>
@@ -294,7 +291,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue';
+import { onMounted, reactive, ref } from 'vue';
 import axios from 'axios';
 
 const orders = ref([]);
@@ -305,14 +302,14 @@ const filters = reactive({
   clientPhone: '',
   dateFrom: '',
   dateTo: '',
-  paymentStatus: 'open', // по умолчанию — неоплаченные и частичные
+  paymentStatus: 'open',
 });
 
 const shift = ref(null);
 const shiftLoading = ref(false);
 const shiftError = ref('');
 
-// Состояние модалки оплаты
+// Модалка оплаты
 const isPaymentModalOpen = ref(false);
 const selectedOrder = ref(null);
 const paymentAmount = ref('');
@@ -352,7 +349,6 @@ async function loadOrders() {
       params.date_to = filters.dateTo;
     }
 
-    // Статус оплаты
     if (filters.paymentStatus === 'unpaid') {
       params.payment_status = 'unpaid';
     } else if (filters.paymentStatus === 'partial') {
@@ -362,14 +358,14 @@ async function loadOrders() {
     } else if (filters.paymentStatus === 'all') {
       params.payment_status = 'unpaid,partial,paid';
     }
-    // статус "open" — дефолтный, параметр не передаём, backend вернёт unpaid+partial
+    // 'open' — по умолчанию unpaid+partial, параметр не передаём
 
     const { data } = await axios.get('/api/cash/orders', { params });
     orders.value = Array.isArray(data.items) ? data.items : [];
-  } catch (err) {
-    console.error('Cash orders load error', err);
+  } catch (e) {
+    console.error(e);
     error.value =
-      err?.response?.data?.message || 'Не удалось загрузить заказы для кассы';
+      e?.response?.data?.message || 'Не удалось загрузить заказы для кассы';
   } finally {
     loading.value = false;
   }
@@ -382,10 +378,10 @@ async function loadShift() {
   try {
     const { data } = await axios.get('/api/cash/shift/current');
     shift.value = data?.shift || null;
-  } catch (err) {
-    console.error('Cash shift load error', err);
+  } catch (e) {
+    console.error(e);
     shiftError.value =
-      err?.response?.data?.message || 'Не удалось загрузить данные по смене';
+      e?.response?.data?.message || 'Не удалось загрузить данные по смене';
   } finally {
     shiftLoading.value = false;
   }
@@ -411,13 +407,14 @@ function reloadAll() {
 function openPaymentModal(order) {
   selectedOrder.value = order;
   const remaining = Number(order.remaining_amount || 0);
-  paymentAmount.value = remaining > 0 ? String(remaining.toFixed(2)) : '';
+  paymentAmount.value = remaining > 0 ? remaining.toFixed(2) : '';
   paymentMethod.value = 'cash';
   paymentError.value = '';
   isPaymentModalOpen.value = true;
 }
 
 function closePaymentModal() {
+  if (paying.value) return;
   isPaymentModalOpen.value = false;
   selectedOrder.value = null;
   paymentAmount.value = '';
@@ -444,15 +441,15 @@ async function submitPayment() {
       method: paymentMethod.value,
     };
 
-    const { data } = await axios.post('/api/payments', payload);
+    await axios.post('/api/payments', payload);
 
     showToast('Оплата успешно проведена', 'success');
     closePaymentModal();
     await Promise.all([loadOrders(), loadShift()]);
-  } catch (err) {
-    console.error('Payment error', err);
+  } catch (e) {
+    console.error(e);
     paymentError.value =
-      err?.response?.data?.message || 'Не удалось провести оплату';
+      e?.response?.data?.message || 'Не удалось провести оплату';
     showToast(paymentError.value, 'error');
   } finally {
     paying.value = false;
@@ -463,11 +460,13 @@ function formatDate(value) {
   if (!value) return '—';
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return '—';
+
   const day = String(d.getDate()).padStart(2, '0');
   const month = String(d.getMonth() + 1).padStart(2, '0');
   const year = d.getFullYear();
   const hours = String(d.getHours()).padStart(2, '0');
   const minutes = String(d.getMinutes()).padStart(2, '0');
+
   return `${day}.${month}.${year} ${hours}:${minutes}`;
 }
 
@@ -521,16 +520,14 @@ onMounted(() => {
   gap: 12px;
 }
 
-/* Фильтры */
-
-.cash-filters {
+.cash-filters-card {
   background: var(--color-bg-alt);
   border-radius: 16px;
   padding: 14px 16px;
   box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
 }
 
-.cash-filters-row {
+.cash-filters {
   display: flex;
   flex-wrap: wrap;
   gap: 12px 16px;
@@ -578,9 +575,7 @@ onMounted(() => {
   gap: 8px;
 }
 
-/* Таблица */
-
-.cash-table-card {
+.cash-card {
   background: var(--color-bg-alt);
   border-radius: 16px;
   padding: 14px 16px;
@@ -588,18 +583,18 @@ onMounted(() => {
   font-size: 13px;
 }
 
-.cash-table-header-row {
+.cash-card-header {
   display: flex;
   justify-content: space-between;
   align-items: baseline;
   margin-bottom: 10px;
 }
 
-.cash-table-title {
+.cash-card-title {
   font-weight: 600;
 }
 
-.cash-table-caption {
+.cash-card-subtitle {
   font-size: 12px;
   color: var(--color-text-muted);
 }
@@ -681,7 +676,7 @@ onMounted(() => {
   white-space: nowrap;
 }
 
-.cash-status-pill {
+.cash-status {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -690,17 +685,17 @@ onMounted(() => {
   font-size: 11px;
 }
 
-.cash-status-unpaid {
+.cash-status--unpaid {
   background: #fee2e2;
   color: #b91c1c;
 }
 
-.cash-status-partial {
+.cash-status--partial {
   background: #fef3c7;
   color: #92400e;
 }
 
-.cash-status-paid {
+.cash-status--paid {
   background: #dcfce7;
   color: #166534;
 }
@@ -709,100 +704,33 @@ onMounted(() => {
   text-align: right;
 }
 
-/* Боковая панель */
-
 .cash-sidebar {
   display: flex;
   flex-direction: column;
   gap: 12px;
 }
 
-.cash-summary-card {
-  background: var(--color-bg-alt);
-  border-radius: 16px;
-  padding: 14px 16px;
-  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
-  font-size: 13px;
-}
-
-.cash-summary-title {
-  font-weight: 600;
-  margin-bottom: 8px;
+.cash-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
 .cash-summary-row {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 4px;
+  font-size: 13px;
 }
 
 .cash-summary-amount {
   font-weight: 600;
 }
 
-.cash-summary-muted {
-  font-size: 12px;
-  color: var(--color-text-muted);
-}
-
-.cash-summary-error {
-  font-size: 12px;
-  color: var(--color-error);
-}
-
-.cash-summary-empty {
-  font-size: 12px;
-  color: var(--color-text-muted);
-  line-height: 1.4;
-}
-
 .cash-empty {
-  padding: 12px 0;
   font-size: 13px;
   color: var(--color-text-muted);
-}
-
-/* Кнопки */
-
-.btn-primary,
-.btn-secondary {
-  border-radius: 999px;
-  padding: 6px 14px;
-  font-size: 13px;
-  border: 1px solid transparent;
-  cursor: pointer;
-  white-space: nowrap;
-}
-
-.btn-primary {
-  background: var(--color-primary);
-  color: #ffffff;
-  border-color: var(--color-primary);
-}
-
-.btn-primary:hover {
-  opacity: 0.9;
-}
-
-.btn-primary:disabled {
-  opacity: 0.6;
-  cursor: default;
-}
-
-.btn-secondary {
-  background: var(--color-bg-alt);
-  color: var(--color-text-muted);
-  border-color: var(--color-border);
-}
-
-.btn-secondary:hover {
-  background: rgba(148, 163, 184, 0.08);
-}
-
-.btn-sm {
-  padding: 4px 10px;
-  font-size: 12px;
+  padding: 8px 0;
 }
 
 /* Модалка */
@@ -920,7 +848,7 @@ onMounted(() => {
   gap: 8px;
 }
 
-/* Тосты */
+/* Тост */
 
 .cash-toast {
   position: fixed;
@@ -943,7 +871,47 @@ onMounted(() => {
   color: #fef2f2;
 }
 
-/* Общие состояния */
+/* Общие */
+
+.btn-primary,
+.btn-secondary {
+  border-radius: 999px;
+  padding: 6px 14px;
+  font-size: 13px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.btn-primary {
+  background: var(--color-primary);
+  color: #ffffff;
+  border-color: var(--color-primary);
+}
+
+.btn-primary:hover {
+  opacity: 0.9;
+}
+
+.btn-primary:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.btn-secondary {
+  background: var(--color-bg-alt);
+  color: var(--color-text-muted);
+  border-color: var(--color-border);
+}
+
+.btn-secondary:hover {
+  background: rgba(148, 163, 184, 0.08);
+}
+
+.btn-sm {
+  padding: 4px 10px;
+  font-size: 12px;
+}
 
 .page-error {
   margin-top: 8px;

@@ -125,8 +125,9 @@
               <OrderItemRow
                 v-for="item in productItems"
                 :key="item.id"
-                v-model="itemsMap[item.id]"
+                :model-value="item"
                 :categories="productCategories"
+                @update:model-value="updateItem(item.id, $event)"
                 @remove="removeItem"
               />
             </div>
@@ -151,8 +152,9 @@
               <OrderItemRow
                 v-for="item in postpressItems"
                 :key="item.id"
-                v-model="itemsMap[item.id]"
+                :model-value="item"
                 :categories="productCategories"
+                @update:model-value="updateItem(item.id, $event)"
                 @remove="removeItem"
               />
             </div>
@@ -263,19 +265,6 @@ const form = reactive({
 const items = ref([]);
 const productCategories = ref([]);
 
-const itemsMap = computed({
-  get() {
-    const map = {};
-    for (const item of items.value) {
-      map[item.id] = item;
-    }
-    return map;
-  },
-  set(newMap) {
-    items.value = Object.values(newMap);
-  },
-});
-
 const productItems = computed(() =>
   items.value.filter((i) => i.type === 'product')
 );
@@ -328,13 +317,18 @@ const totalToPay = computed(() => {
   return total > 0 ? total : 0;
 });
 
-const canSubmit = computed(
-  () =>
+const canSubmit = computed(() => {
+  const hasTitleOrClient =
+    (form.title && form.title.trim().length > 0) ||
+    (form.clientName && form.clientName.trim().length > 0);
+
+  return (
     !!form.deadlineDate &&
-    !!form.title &&
+    hasTitleOrClient &&
     items.value.length > 0 &&
     itemsSubtotal.value > 0
-);
+  );
+});
 
 watch(
   () => props.visible,
@@ -384,6 +378,16 @@ function addItem(type = 'product') {
 
 function removeItem(id) {
   items.value = items.value.filter((i) => i.id !== id);
+}
+
+function updateItem(id, newValue) {
+  const index = items.value.findIndex((i) => i.id === id);
+  if (index !== -1) {
+    items.value[index] = {
+      ...items.value[index],
+      ...newValue,
+    };
+  }
 }
 
 async function loadCategories() {

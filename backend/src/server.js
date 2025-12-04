@@ -645,6 +645,7 @@ app.put('/api/orders/:id/status', authMiddleware, async (req, res, next) => {
   }
 });
 
+
 // GET /api/product-categories — список категорий продукции
 app.get('/api/product-categories', authMiddleware, async (req, res, next) => {
   try {
@@ -1150,10 +1151,12 @@ app.post('/api/cash/shift/close', authMiddleware, async (req, res, next) => {
   }
 });
 
+
 // 404 handler (must be after all routes)
 app.use((req, res, next) => {
   res.status(404).json({ message: 'Not found' });
 });
+
 
 // Global error handler
 // eslint-disable-next-line no-unused-vars
