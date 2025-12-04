@@ -645,10 +645,6 @@ app.put('/api/orders/:id/status', authMiddleware, async (req, res, next) => {
   }
 });
 
-// 404 — JSON по умолчанию
-// Products & price tiers API
-
-
 // GET /api/product-categories — список категорий продукции
 app.get('/api/product-categories', authMiddleware, async (req, res, next) => {
   try {
@@ -907,12 +903,6 @@ app.delete('/api/products/:id', authMiddleware, async (req, res, next) => {
   }
 });
 
-// 404 handler (must be after all routes)
-app.use((req, res, next) => {
-  res.status(404).json({ message: 'Not found' });
-});
-
-
 // GET /api/cash/orders — неоплаченные и частично оплаченные заказы
 app.get('/api/cash/orders', authMiddleware, async (req, res, next) => {
   try {
@@ -1158,6 +1148,11 @@ app.post('/api/cash/shift/close', authMiddleware, async (req, res, next) => {
   } catch (err) {
     return next(err);
   }
+});
+
+// 404 handler (must be after all routes)
+app.use((req, res, next) => {
+  res.status(404).json({ message: 'Not found' });
 });
 
 // Global error handler
