@@ -198,6 +198,12 @@ const DIRECTORY_TYPES = new Set([
   'suppliers',
   'cashShifts',
   'postpress',
+  'techCards',
+  'equipment',
+  'productionStages',
+  'pricingFormulas',
+  'clientSources',
+  'staffRoles',
 ]);
 
 // Basic middlewares
