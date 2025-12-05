@@ -37,13 +37,20 @@
     </div>
 
     <div v-if="activeDatabase" class="modal-backdrop" @click.self="closeModal">
-      <div class="modal">
+      <div class="modal" :style="tableStyle">
         <div class="modal-header">
           <div>
             <div class="modal-title">{{ currentConfig.title }}</div>
             <div class="modal-subtitle">{{ currentConfig.description }}</div>
           </div>
           <button class="btn" type="button" @click="closeModal">Закрыть</button>
+        </div>
+
+        <div v-if="undoState.record" class="undo-banner">
+          <span>
+            {{ undoState.label }} удалена. Вернуть изменения?
+          </span>
+          <button class="btn btn-primary" type="button" @click="undoDelete">Отменить</button>
         </div>
 
         <div class="modal-toolbar">
@@ -96,7 +103,7 @@
             </div>
           </div>
           <div v-if="filteredRecords.length === 0" class="empty-state">
-            Нет записей по выбранным условиям
+            {{ hasAnyRecords ? 'Нет записей по выбранным условиям' : 'Записей пока нет. Создайте первую.' }}
           </div>
         </div>
 
@@ -107,7 +114,8 @@
           <label
             v-for="field in currentConfig.fields"
             :key="field.key"
-            :class="{ 'span-2': field.fullWidth }"
+            :class="{ 'span-2': field.fullWidth, 'has-error': validationHints[field.key] }"
+            :data-field-key="field.key"
           >
             {{ field.label }}
             <input
@@ -118,11 +126,14 @@
               :min="field.min"
               :placeholder="field.placeholder"
               :required="field.required"
+              :list="emailListId(field)"
+              @input="handleInput(field)"
             />
             <select
               v-else-if="field.type === 'select'"
               v-model="form[field.key]"
               :required="field.required"
+              @change="handleInput(field)"
             >
               <option value="" disabled>Выберите</option>
               <option
@@ -133,6 +144,10 @@
                 {{ option.label ?? option }}
               </option>
             </select>
+            <datalist v-if="emailListId(field)" :id="emailListId(field)">
+              <option v-for="hint in emailHints[field.key] || []" :key="hint" :value="hint" />
+            </datalist>
+            <div v-if="validationHints[field.key]" class="field-hint">{{ validationHints[field.key] }}</div>
           </label>
 
           <div class="modal-actions span-2">
@@ -148,7 +163,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue';
 import axios from 'axios';
 
 const databases = [
@@ -201,6 +216,11 @@ const records = reactive({
 
 const categoryOptions = ref([]);
 const userOptions = ref([]);
+const validationHints = reactive({});
+const emailHints = reactive({});
+const undoState = reactive({ timer: null, record: null, type: '', label: '' });
+const unsavedChanges = ref(false);
+const suspendAutosave = ref(false);
 
 const databaseConfigs = {
   users: {
@@ -363,6 +383,8 @@ const activeDatabase = ref('');
 const editingId = ref(null);
 const form = ref({});
 
+const emailDomains = ['gmail.com', 'yandex.ru', 'mail.ru', 'icloud.com', 'outlook.com'];
+
 const filters = reactive(
   Object.keys(databaseConfigs).reduce((acc, key) => {
     acc[key] = { search: '', filter: '' };
@@ -387,10 +409,28 @@ const availableFilters = computed(() => {
   return Array.from(options.entries()).map(([value, label]) => ({ value, label }));
 });
 
+const tableStyle = computed(() => {
+  const columns = currentConfig.value?.columns?.length || 1;
+  const baseWidth = 360 + columns * 160;
+  return {
+    '--column-count': columns,
+    maxWidth: `${Math.min(Math.max(baseWidth, 640), 1440)}px`,
+  };
+});
+
+const hasAnyRecords = computed(() => (records[activeDatabase.value] || []).length > 0);
+
 const filteredRecords = computed(() => {
   if (!activeDatabase.value) return [];
   const { search, filter } = filters[activeDatabase.value];
   const config = currentConfig.value;
+  const normalize = (value) =>
+    String(value || '')
+      .toLowerCase()
+      .replace('ё', 'е')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '');
+
   return (records[activeDatabase.value] || [])
     .filter((item) => {
       if (filter && config.filterKey) {
@@ -400,10 +440,8 @@ const filteredRecords = computed(() => {
     })
     .filter((item) => {
       if (!search) return true;
-      const query = search.toLowerCase();
-      return (config.searchable || []).some((key) =>
-        String(item[key] || '').toLowerCase().includes(query)
-      );
+      const query = normalize(search.trim());
+      return (config.searchable || []).some((key) => normalize(item[key]).includes(query));
     });
 });
 
@@ -490,6 +528,15 @@ async function loadAll() {
 }
 
 function openDatabase(key) {
+  if (unsavedChanges.value) {
+    const confirmed = window.confirm(
+      'Есть несохранённые данные. Нажмите “ОК”, чтобы сохранить, или “Отмена”, чтобы оставить как черновик.'
+    );
+    if (confirmed) {
+      saveRecord();
+      return;
+    }
+  }
   activeDatabase.value = key;
   loadDatabase(key);
   resetForm();
@@ -498,6 +545,15 @@ function openDatabase(key) {
 }
 
 function closeModal() {
+  if (unsavedChanges.value) {
+    const choice = window.confirm(
+      'Есть несохранённые изменения. Нажмите “ОК”, чтобы сохранить или “Отмена”, чтобы закрыть и сохранить как черновик.'
+    );
+    if (choice) {
+      saveRecord();
+      return;
+    }
+  }
   activeDatabase.value = '';
   editingId.value = null;
 }
@@ -508,15 +564,29 @@ function startCreate(key) {
   }
   editingId.value = null;
   const fields = databaseConfigs[activeDatabase.value].fields;
+  const draft = readDraft(activeDatabase.value);
+  suspendAutosave.value = true;
   form.value = fields.reduce((acc, field) => {
-    acc[field.key] = field.type === 'select' ? '' : '';
+    const draftValue = draft?.[field.key];
+    if (draftValue !== undefined) {
+      acc[field.key] = draftValue;
+    } else if (field.type === 'datetime-local') {
+      acc[field.key] = new Date().toISOString().slice(0, 16);
+    } else {
+      acc[field.key] = '';
+    }
     return acc;
   }, {});
+  validationHintsReset();
+  unsavedChanges.value = false;
+  nextTick(() => focusField(fields.find((f) => f.required)?.key));
+  suspendAutosave.value = false;
 }
 
 function startEdit(item) {
   editingId.value = item.id;
   form.value = { ...item };
+  validationHintsReset();
 }
 
 function resetForm() {
@@ -527,16 +597,39 @@ function resetForm() {
     return acc;
   }, {});
   editingId.value = null;
+  validationHintsReset();
+  unsavedChanges.value = false;
 }
 
 async function deleteRecord(id) {
   if (!activeDatabase.value) return;
+  const current = (records[activeDatabase.value] || []).find((item) => item.id === id);
   await axios.delete(`/api/directories/${activeDatabase.value}/${id}`);
   await loadDatabase(activeDatabase.value);
+  if (undoState.timer) clearTimeout(undoState.timer);
+  undoState.record = current || null;
+  undoState.type = activeDatabase.value;
+  undoState.label = current?.name || 'Запись';
+  undoState.timer = setTimeout(() => {
+    undoState.record = null;
+    undoState.type = '';
+    undoState.label = '';
+  }, 10000);
 }
 
 async function saveRecord() {
   if (!activeDatabase.value) return;
+  const missing = (currentConfig.value.fields || []).filter(
+    (field) => field.required && !form.value[field.key]
+  );
+  validationHintsReset();
+  if (missing.length) {
+    missing.forEach((field) => {
+      validationHints[field.key] = 'Заполните обязательное поле';
+    });
+    nextTick(() => focusField(missing[0]?.key));
+    return;
+  }
   const payload = { ...form.value };
   if (editingId.value) {
     await axios.put(`/api/directories/${activeDatabase.value}/${editingId.value}`, payload);
@@ -545,7 +638,96 @@ async function saveRecord() {
   }
   await loadDatabase(activeDatabase.value);
   resetForm();
+  unsavedChanges.value = false;
+  clearDraft(activeDatabase.value);
 }
+
+function validationHintsReset() {
+  Object.keys(validationHints).forEach((key) => delete validationHints[key]);
+}
+
+function readDraft(key) {
+  try {
+    const raw = localStorage.getItem(`directories-draft-${key}`);
+    return raw ? JSON.parse(raw).form : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+function clearDraft(key) {
+  localStorage.removeItem(`directories-draft-${key}`);
+}
+
+function handleInput(field) {
+  const value = form.value[field.key];
+  if (!value && value !== 0) return;
+
+  if (/phone/i.test(field.key)) {
+    const digits = String(value).replace(/\D/g, '').replace(/^8/, '7').slice(0, 11);
+    const formatted = digits
+      .replace(/^7?/, '')
+      .replace(/^(\d{0,3})(\d{0,3})(\d{0,2})(\d{0,2}).*/, (_, a, b, c, d) =>
+        `+7${a ? ` (${a}` : ''}${a && a.length === 3 ? ')' : ''}${b ? ` ${b}` : ''}${c ? `-${c}` : ''}${d ? `-${d}` : ''}`.trim()
+      )
+      .replace(/\s+$/, '');
+    form.value[field.key] = formatted;
+  }
+
+  if (/name|contact/i.test(field.key) && typeof value === 'string') {
+    const capitalized = value
+      .split(/\s+/)
+      .filter(Boolean)
+      .map((chunk) => chunk.charAt(0).toUpperCase() + chunk.slice(1).toLowerCase())
+      .join(' ');
+    form.value[field.key] = capitalized;
+  }
+
+  if (/email/i.test(field.key) && typeof value === 'string') {
+    const [localPart] = value.split('@');
+    emailHints[field.key] = emailDomains.map((domain) => `${localPart}@${domain}`);
+  }
+
+  unsavedChanges.value = true;
+}
+
+function emailListId(field) {
+  if (/email/i.test(field.key)) return `email-hints-${field.key}`;
+  return null;
+}
+
+function focusField(key) {
+  if (!key) return;
+  const fieldEl = document.querySelector(`[data-field-key="${key}"] input, [data-field-key="${key}"] select`);
+  if (fieldEl) {
+    fieldEl.focus();
+    fieldEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+}
+
+async function undoDelete() {
+  if (!undoState.record || !undoState.type) return;
+  const payload = { ...undoState.record };
+  delete payload.id;
+  await axios.post(`/api/directories/${undoState.type}`, payload);
+  await loadDatabase(undoState.type);
+  undoState.record = null;
+  undoState.type = '';
+  undoState.label = '';
+}
+
+watch(
+  () => ({ ...form.value, db: activeDatabase.value }),
+  () => {
+    if (!activeDatabase.value || suspendAutosave.value) return;
+    localStorage.setItem(
+      `directories-draft-${activeDatabase.value}`,
+      JSON.stringify({ form: form.value, timestamp: Date.now() })
+    );
+    unsavedChanges.value = true;
+  },
+  { deep: true }
+);
 
 onMounted(loadAll);
 </script>
@@ -665,6 +847,17 @@ onMounted(loadAll);
   gap: 16px;
 }
 
+.undo-banner {
+  background: #0f172a;
+  border: 1px dashed #374151;
+  padding: 10px 12px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
 .modal-header {
   display: flex;
   align-items: center;
@@ -693,12 +886,13 @@ onMounted(loadAll);
 .table {
   border: 1px solid #1f2937;
   border-radius: 12px;
+  overflow-x: auto;
 }
 
 .table-head,
 .table-row {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)) 160px;
+  grid-template-columns: repeat(var(--column-count, 3), minmax(140px, 1fr)) 180px;
   gap: 8px;
   padding: 12px;
   align-items: center;
@@ -749,6 +943,17 @@ label {
   flex-direction: column;
   gap: 4px;
   font-size: 13px;
+}
+
+.has-error input,
+.has-error select {
+  border-color: #ef4444;
+  box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.3);
+}
+
+.field-hint {
+  color: #f87171;
+  font-size: 12px;
 }
 
 input,
