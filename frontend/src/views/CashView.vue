@@ -177,25 +177,49 @@
           <div v-if="shiftLoading" class="page-loading">
             Загрузка данных по смене…
           </div>
-          <div v-else-if="shiftError" class="page-error">
-            {{ shiftError }}
-          </div>
-          <div v-else-if="!shift">
-            <div class="cash-empty">
-              Нет открытой кассовой смены. Оплаты будут учитываться в заказах,
-              но не попадут в статистику смены.
+          <div v-else>
+            <div v-if="shiftError" class="page-error">{{ shiftError }}</div>
+
+            <div v-if="shift" class="cash-summary">
+              <div class="cash-summary-row">
+                <span>Открыта смена</span>
+                <span>{{ formatDate(shift.opened_at) }}</span>
+              </div>
+              <div class="cash-summary-row">
+                <span>Сумма оплат за смену</span>
+                <span class="cash-summary-amount">
+                  {{ formatMoney(shift.total_amount) }}
+                </span>
+              </div>
+              <div class="cash-summary-actions">
+                <button
+                  type="button"
+                  class="btn-secondary"
+                  :disabled="shiftActionLoading"
+                  @click="closeShift"
+                >
+                  <span v-if="shiftActionLoading">Закрываем смену…</span>
+                  <span v-else>Закрыть смену</span>
+                </button>
+              </div>
             </div>
-          </div>
-          <div v-else class="cash-summary">
-            <div class="cash-summary-row">
-              <span>Открыта смена</span>
-              <span>{{ formatDate(shift.opened_at) }}</span>
-            </div>
-            <div class="cash-summary-row">
-              <span>Сумма оплат за смену</span>
-              <span class="cash-summary-amount">
-                {{ formatMoney(shift.total_amount) }}
-              </span>
+
+            <div v-else>
+              <div class="cash-empty">
+                Нет открытой кассовой смены. Оплаты будут учитываться в заказах,
+                но не попадут в статистику смены.
+              </div>
+              <div class="cash-summary-actions">
+                <button
+                  type="button"
+                  class="btn-primary"
+                  :disabled="shiftActionLoading"
+                  @click="openShift"
+                >
+                  <span v-if="shiftActionLoading">Открываем смену…</span>
+                  <span v-else>Открыть смену</span>
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -308,6 +332,7 @@ const filters = reactive({
 const shift = ref(null);
 const shiftLoading = ref(false);
 const shiftError = ref('');
+const shiftActionLoading = ref(false);
 
 // Модалка оплаты
 const isPaymentModalOpen = ref(false);
@@ -384,6 +409,44 @@ async function loadShift() {
       e?.response?.data?.message || 'Не удалось загрузить данные по смене';
   } finally {
     shiftLoading.value = false;
+  }
+}
+
+async function openShift() {
+  shiftActionLoading.value = true;
+  shiftError.value = '';
+
+  try {
+    const { data } = await axios.post('/api/cash/shift/open');
+    shift.value = data?.shift || null;
+    showToast('Кассовая смена открыта', 'success');
+  } catch (e) {
+    console.error(e);
+    const message =
+      e?.response?.data?.message || 'Не удалось открыть кассовую смену';
+    shiftError.value = message;
+    showToast(message, 'error');
+  } finally {
+    shiftActionLoading.value = false;
+  }
+}
+
+async function closeShift() {
+  shiftActionLoading.value = true;
+  shiftError.value = '';
+
+  try {
+    await axios.post('/api/cash/shift/close');
+    shift.value = null;
+    showToast('Кассовая смена закрыта', 'success');
+  } catch (e) {
+    console.error(e);
+    const message =
+      e?.response?.data?.message || 'Не удалось закрыть кассовую смену';
+    shiftError.value = message;
+    showToast(message, 'error');
+  } finally {
+    shiftActionLoading.value = false;
   }
 }
 
@@ -725,6 +788,12 @@ onMounted(() => {
 
 .cash-summary-amount {
   font-weight: 600;
+}
+
+.cash-summary-actions {
+  margin-top: 10px;
+  display: flex;
+  justify-content: flex-end;
 }
 
 .cash-empty {
