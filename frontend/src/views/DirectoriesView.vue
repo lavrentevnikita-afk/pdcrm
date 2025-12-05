@@ -6,32 +6,40 @@
       кассовыми сменами без лишних заглушек.
     </div>
 
-    <div class="directories-grid">
-      <section
-        v-for="db in databases"
-        :key="db.key"
-        class="directory-card"
-      >
-        <div>
-          <div class="card-title">{{ db.title }}</div>
-          <div class="card-subtitle">{{ db.description }}</div>
+    <div class="directory-groups">
+      <section v-for="group in databaseGroups" :key="group.key" class="directory-group">
+        <div class="group-head">
+          <div class="group-title">{{ group.title }}</div>
+          <div class="group-subtitle">{{ group.subtitle }}</div>
         </div>
-        <div class="card-meta">
-          <div class="meta-count">
-            <span class="count-number">{{ (records[db.key] || []).length }}</span>
-            <span class="count-label">записей</span>
-          </div>
-          <div class="meta-tags">
-            <span v-for="tag in db.tags" :key="tag" class="badge">{{ tag }}</span>
-          </div>
-        </div>
-        <div class="card-actions">
-          <button class="btn" type="button" @click="openDatabase(db.key)">
-            Управлять
-          </button>
-          <button class="btn btn-primary" type="button" @click="startCreate(db.key)">
-            Добавить
-          </button>
+        <div class="directories-grid">
+          <article
+            v-for="db in group.items"
+            :key="db.key"
+            class="directory-card"
+          >
+            <div>
+              <div class="card-title">{{ db.title }}</div>
+              <div class="card-subtitle">{{ db.description }}</div>
+            </div>
+            <div class="card-meta">
+              <div class="meta-count">
+                <span class="count-number">{{ (records[db.key] || []).length }}</span>
+                <span class="count-label">записей</span>
+              </div>
+              <div class="meta-tags">
+                <span v-for="tag in db.tags" :key="tag" class="badge">{{ tag }}</span>
+              </div>
+            </div>
+            <div class="card-actions">
+              <button class="btn" type="button" @click="openDatabase(db.key)">
+                Управлять
+              </button>
+              <button class="btn btn-primary" type="button" @click="startCreate(db.key)">
+                Добавить
+              </button>
+            </div>
+          </article>
         </div>
       </section>
     </div>
@@ -147,144 +155,143 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import axios from 'axios';
 
-const databases = [
+const databaseGroups = [
   {
-    key: 'techCards',
-    title: 'Спецификации / техкарты',
-    description:
-      'Полные инструкции по производству: материалы, оборудование, этапы и нормы времени.',
-    tags: ['Маршрут', 'Стандарты'],
+    key: 'operational',
+    title: '🔥 Операционные справочники',
+    subtitle: 'Рабочие базы для ежедневной обработки заказов и складских операций.',
+    items: [
+      {
+        key: 'clients',
+        title: 'Клиенты',
+        description: 'Карточки клиентов для быстрых заказов, истории и тегов.',
+        tags: ['B2B', 'B2C'],
+      },
+      {
+        key: 'organizations',
+        title: 'Организации',
+        description: 'Юрлица с реквизитами, оплатой и контактами.',
+        tags: ['Юрлица', 'Биллинг'],
+      },
+      {
+        key: 'products',
+        title: 'Продукция (SKU)',
+        description: 'Готовые товарные позиции, связанные с техкартами и формулами.',
+        tags: ['SKU', 'Калькулятор'],
+      },
+      {
+        key: 'materials',
+        title: 'Материалы',
+        description: 'Складская база: остатки, минимумы, параметры и стоимость закупки.',
+        tags: ['Склад', 'Закупки'],
+      },
+    ],
   },
   {
-    key: 'equipment',
-    title: 'Оборудование',
-    description:
-      'Станки, принтеры и постпечатка с характеристиками, статусом и обслуживанием.',
-    tags: ['Мощности', 'Сервис'],
+    key: 'technical',
+    title: '⭐ Технические справочники',
+    subtitle: 'Регулярно дополняемые базы, связанные с производством и закупками.',
+    items: [
+      {
+        key: 'suppliers',
+        title: 'Поставщики',
+        description: 'Контрагенты, контакты, сроки доставки и история закупок.',
+        tags: ['Закупки', 'Контракты'],
+      },
+      {
+        key: 'equipment',
+        title: 'Оборудование',
+        description: 'Станки и постпечать с характеристиками, статусом и операторами.',
+        tags: ['Мощности', 'Сервис'],
+      },
+      {
+        key: 'productionStages',
+        title: 'Этапы производства',
+        description: 'Стандартизированные шаги цепочки выполнения заказов.',
+        tags: ['Маршрут', 'Нормы времени'],
+      },
+      {
+        key: 'postpress',
+        title: 'Постпечать / операции',
+        description: 'Финишные операции с ценой, временем и требуемым оборудованием.',
+        tags: ['Финишинг', 'Производство'],
+      },
+    ],
   },
   {
-    key: 'productionStages',
-    title: 'Этапы производства',
-    description: 'Стандартизированные шаги цепочки выполнения заказов.',
-    tags: ['Маршрут', 'Нормы времени'],
+    key: 'structural',
+    title: '⚙️ Структурные справочники',
+    subtitle: 'Редко меняемые справочники, задают структуру каталога и расчётов.',
+    items: [
+      {
+        key: 'productCategories',
+        title: 'Категории продукции',
+        description: 'Группы SKU с типами продукции и описанием.',
+        tags: ['Каталог', 'SKU'],
+      },
+      {
+        key: 'materialCategories',
+        title: 'Категории материалов',
+        description: 'Группы материалов с базовыми единицами измерения.',
+        tags: ['Материалы', 'Категории'],
+      },
+      {
+        key: 'pricingFormulas',
+        title: 'Формулы расчёта',
+        description: 'Логика калькуляции с переменными, коэффициентами и минимумами.',
+        tags: ['Ценообразование', 'Автоматизация'],
+      },
+    ],
   },
   {
-    key: 'materials',
-    title: 'Материалы',
-    description: 'Складская база: остатки, минимумы, параметры и стоимость закупки.',
-    tags: ['Склад', 'Закупки'],
-  },
-  {
-    key: 'materialCategories',
-    title: 'Категории материалов',
-    description: 'Группы материалов для фильтров, аналитики и карточек.',
-    tags: ['Материалы', 'Категории'],
-  },
-  {
-    key: 'productCategories',
-    title: 'Категории продукции',
-    description: 'Структура каталога SKU и типовых характеристик.',
-    tags: ['Каталог', 'SKU'],
-  },
-  {
-    key: 'products',
-    title: 'Продукция (SKU)',
-    description: 'Готовые товары с техкартами, материалами и базовой ценой.',
-    tags: ['SKU', 'Калькулятор'],
-  },
-  {
-    key: 'pricingFormulas',
-    title: 'Формулы расчета',
-    description: 'Логика калькуляции с параметрами, минимумами и правилами округления.',
-    tags: ['Ценообразование', 'Автоматизация'],
-  },
-  {
-    key: 'postpress',
-    title: 'Постпечать / операции',
-    description: 'Финишные операции с ценой, временем и требуемым оборудованием.',
-    tags: ['Финишинг', 'Производство'],
-  },
-  {
-    key: 'suppliers',
-    title: 'Поставщики',
-    description: 'Контрагенты, цены, условия доставки и история закупок.',
-    tags: ['Закупки', 'Контракты'],
-  },
-  {
-    key: 'users',
-    title: 'Пользователи',
-    description: 'ПИН-коды, доступы и назначения сотрудников.',
-    tags: ['Доступ', 'Сотрудники'],
-  },
-  {
-    key: 'clients',
-    title: 'Клиенты',
-    description: 'Карточки клиентов для быстрых заказов и истории.',
-    tags: ['B2B', 'B2C'],
-  },
-  {
-    key: 'organizations',
-    title: 'Организации',
-    description: 'Юрлица с реквизитами, оплатой и контактами.',
-    tags: ['Юрлица', 'Биллинг'],
-  },
-  {
-    key: 'clientSources',
-    title: 'Источники клиентов',
-    description: 'Каналы привлечения с оценкой конверсии и стоимости лида.',
-    tags: ['Маркетинг', 'Аналитика'],
-  },
-  {
-    key: 'staffRoles',
-    title: 'Роли и навыки',
-    description: 'Доступы, навыки и назначение сотрудников на оборудование.',
-    tags: ['HR', 'Доступ'],
-  },
-  {
-    key: 'cashShifts',
-    title: 'Кассовые смены',
-    description: 'История смен с возможностью корректировать записи.',
-    tags: ['Касса', 'История'],
+    key: 'system',
+    title: '🧱 Системные справочники',
+    subtitle: 'Базовые настройки, которые меняет только администратор.',
+    items: [
+      {
+        key: 'techCards',
+        title: 'Спецификации / техкарты',
+        description:
+          'Маршруты производства: материалы, оборудование, этапы и нормы времени.',
+        tags: ['Маршрут', 'Стандарты'],
+      },
+      {
+        key: 'users',
+        title: 'Пользователи',
+        description: 'Сотрудники с ПИН-кодами, ролями, отделом и статусом.',
+        tags: ['Доступ', 'Сотрудники'],
+      },
+      {
+        key: 'staffRoles',
+        title: 'Роли и навыки',
+        description: 'Роли с правами, навыками и доступом к оборудованию.',
+        tags: ['HR', 'Доступ'],
+      },
+      {
+        key: 'clientSources',
+        title: 'Источники клиентов',
+        description: 'Каналы привлечения с типом и стоимостью лида.',
+        tags: ['Маркетинг', 'Аналитика'],
+      },
+      {
+        key: 'cashShifts',
+        title: 'Кассовые смены',
+        description: 'История смен с кассирами и итогами.',
+        tags: ['Касса', 'История'],
+      },
+    ],
   },
 ];
 
-const records = reactive({
-  users: [],
-  techCards: [],
-  equipment: [],
-  productionStages: [],
-  materials: [],
-  materialCategories: [],
-  productCategories: [],
-  products: [],
-  pricingFormulas: [],
-  postpress: [],
-  suppliers: [],
-  clients: [],
-  organizations: [],
-  clientSources: [],
-  staffRoles: [],
-  cashShifts: [],
-});
+const databases = databaseGroups.flatMap((group) => group.items);
 
-const loading = reactive({
-  users: false,
-  techCards: false,
-  equipment: false,
-  productionStages: false,
-  materials: false,
-  materialCategories: false,
-  productCategories: false,
-  products: false,
-  pricingFormulas: false,
-  postpress: false,
-  suppliers: false,
-  clients: false,
-  organizations: false,
-  clientSources: false,
-  staffRoles: false,
-  cashShifts: false,
-});
+const records = reactive(
+  Object.fromEntries(databases.map((db) => [db.key, []]))
+);
+
+const loading = reactive(
+  Object.fromEntries(databases.map((db) => [db.key, false]))
+);
 
 const saving = ref(false);
 const errorMessage = ref('');
@@ -325,22 +332,27 @@ const clientSourceOptions = computed(() =>
   (records.clientSources || []).map((item) => item.name || `Источник #${item.id}`)
 );
 
+const staffRoleOptions = computed(() =>
+  (records.staffRoles || []).map((item) => item.name || item.role || `Роль #${item.id}`)
+);
+
 const databaseConfigs = {
   techCards: {
     title: 'Спецификации / техкарты',
-    description: 'Полные маршруты производства с материалами, этапами и нормами времени.',
+    description: 'Полные маршруты производства: формат, материалы, оборудование и нормы.',
     columns: [
-      { key: 'name', label: 'Техкарта' },
-      { key: 'product', label: 'Продукция' },
+      { key: 'name', label: 'Техкарта / продукт' },
+      { key: 'product', label: 'SKU' },
       { key: 'format', label: 'Формат' },
       { key: 'material', label: 'Материал' },
-      { key: 'base_tirage', label: 'Базовый тираж', type: 'number' },
       { key: 'default_equipment', label: 'Оборудование' },
       { key: 'stages', label: 'Этапы' },
+      { key: 'consumption', label: 'Норма расхода', type: 'number' },
+      { key: 'time_norm', label: 'Норма времени', type: 'number' },
     ],
     fields: [
       { key: 'name', label: 'Название продукции/техкарты', type: 'text', required: true },
-      { key: 'product', label: 'SKU', type: 'select', options: () => productOptions.value, placeholder: 'Связать с продукцией' },
+      { key: 'product', label: 'Продукция (SKU)', type: 'select', options: () => productOptions.value, placeholder: 'Связать с продукцией', required: true },
       { key: 'format', label: 'Формат', type: 'text', placeholder: 'A4, 210x297' },
       {
         key: 'orientation',
@@ -349,7 +361,7 @@ const databaseConfigs = {
         options: ['Портрет', 'Альбом'],
         placeholder: 'Выберите ориентацию',
       },
-      { key: 'material', label: 'Материал', type: 'select', options: () => materialOptions.value, placeholder: 'Выберите материал' },
+      { key: 'material', label: 'Материалы', type: 'text', placeholder: 'Список материалов или ссылки', fullWidth: true },
       { key: 'base_tirage', label: 'Базовый/рекомендованный тираж', type: 'text', inputType: 'number' },
       { key: 'color_profile', label: 'Цветность', type: 'select', options: ['4+4', '4+0', 'УФ', 'Pantone'] },
       {
@@ -360,10 +372,10 @@ const databaseConfigs = {
         placeholder: 'Выберите оборудование',
       },
       { key: 'stages', label: 'Последовательность этапов', type: 'text', placeholder: 'Печать → Ламинация → Резка', fullWidth: true },
+      { key: 'consumption', label: 'Нормы расхода (листов/м²)', type: 'text', inputType: 'number' },
       { key: 'time_norm', label: 'Норма времени, мин', type: 'text', inputType: 'number' },
       { key: 'quality_requirements', label: 'Требования к качеству', type: 'text', fullWidth: true },
       { key: 'settings', label: 'Настройки оборудования', type: 'text', placeholder: 'Профиль, температура, скорость' },
-      { key: 'consumption', label: 'Расход на единицу тиража', type: 'text', inputType: 'number' },
     ],
     filterKey: 'default_equipment',
     filterLabel: 'Оборудование',
@@ -408,7 +420,7 @@ const databaseConfigs = {
     ],
     fields: [
       { key: 'name', label: 'Название этапа', type: 'text', required: true },
-      { key: 'stage_type', label: 'Тип', type: 'select', options: ['Печать', 'Резка', 'Упаковка', 'Контроль качества', 'Доставка', 'Другое'], required: true },
+      { key: 'stage_type', label: 'Тип', type: 'select', options: ['Основной', 'Дополнительный'], required: true },
       { key: 'order', label: 'Порядок выполнения', type: 'text', inputType: 'number' },
       { key: 'avg_duration', label: 'Средняя длительность, мин', type: 'text', inputType: 'number' },
       { key: 'equipment', label: 'Оборудование/отдел', type: 'select', options: () => equipmentOptions.value, placeholder: 'Выберите оборудование' },
@@ -435,7 +447,7 @@ const databaseConfigs = {
       { key: 'name', label: 'Название', type: 'text', required: true },
       { key: 'category', label: 'Категория материала', type: 'select', options: () => materialCategoryOptions.value, placeholder: 'Выберите категорию', required: true },
       { key: 'unit', label: 'Единица измерения', type: 'text', placeholder: 'лист, м², рулон', required: true },
-      { key: 'stock', label: 'Текущий остаток', type: 'text', inputType: 'number' },
+      { key: 'stock', label: 'Текущий остаток', type: 'text', inputType: 'number', placeholder: 'Автоматически по складу' },
       { key: 'min_stock', label: 'Минимальный остаток', type: 'text', inputType: 'number' },
       { key: 'purchase_price', label: 'Цена закупки', type: 'text', inputType: 'number' },
       { key: 'supplier', label: 'Поставщик', type: 'select', options: () => supplierOptions.value, placeholder: 'Выберите поставщика' },
@@ -453,11 +465,13 @@ const databaseConfigs = {
     columns: [
       { key: 'name', label: 'Категория' },
       { key: 'code', label: 'Код' },
+      { key: 'default_unit', label: 'Ед. измерения' },
       { key: 'description', label: 'Описание' },
     ],
     fields: [
       { key: 'name', label: 'Название категории', type: 'text', required: true },
       { key: 'code', label: 'Код', type: 'text', placeholder: 'paper, banner, vinyl' },
+      { key: 'default_unit', label: 'Ед. измерения по умолчанию', type: 'text', placeholder: 'лист, м², рулон' },
       { key: 'description', label: 'Описание', type: 'text', fullWidth: true },
     ],
     filterKey: 'code',
@@ -470,11 +484,13 @@ const databaseConfigs = {
     columns: [
       { key: 'name', label: 'Категория' },
       { key: 'code', label: 'Код' },
+      { key: 'product_type', label: 'Тип продукции' },
       { key: 'description', label: 'Описание' },
     ],
     fields: [
       { key: 'name', label: 'Название категории', type: 'text', required: true },
       { key: 'code', label: 'Код', type: 'text', placeholder: 'print, textile, souvenir' },
+      { key: 'product_type', label: 'Тип продукции', type: 'select', options: ['Полиграфия', 'Наружка', 'Сувениры', 'Другое'], placeholder: 'Выберите тип' },
       { key: 'description', label: 'Описание', type: 'text', fullWidth: true },
     ],
     filterKey: 'code',
@@ -487,9 +503,11 @@ const databaseConfigs = {
     columns: [
       { key: 'name', label: 'Название' },
       { key: 'category', label: 'Категория' },
-      { key: 'tech_card', label: 'Техкарта' },
+      { key: 'base_format', label: 'Формат' },
       { key: 'material', label: 'Материал' },
-      { key: 'unit_price', label: 'Цена за ед.', type: 'currency' },
+      { key: 'tech_card', label: 'Техкарта' },
+      { key: 'pricing_formula', label: 'Формула' },
+      { key: 'unit_price', label: 'Базовая цена', type: 'currency' },
       { key: 'tirage', label: 'Тираж', type: 'number' },
       { key: 'discount', label: 'Скидка, %', type: 'number' },
       { key: 'total_price', label: 'Итог', type: 'currency' },
@@ -510,7 +528,7 @@ const databaseConfigs = {
     ],
     filterKey: 'category',
     filterLabel: 'Категория',
-    searchable: ['name', 'category', 'tech_card'],
+    searchable: ['name', 'category', 'tech_card', 'base_format'],
   },
   pricingFormulas: {
     title: 'Формулы расчета',
@@ -536,47 +554,43 @@ const databaseConfigs = {
   },
   postpress: {
     title: 'Постпечать / операции',
-    description: 'Финишные операции с ценой, временем и оборудованием.',
+    description: 'Финишные операции с ценой, временем, материалами и оборудованием.',
     columns: [
       { key: 'name', label: 'Операция' },
-      { key: 'type', label: 'Тип' },
-      { key: 'equipment', label: 'Оборудование' },
-      { key: 'unit', label: 'Ед.' },
-      { key: 'setup_time', label: 'Подготовка, мин', type: 'number' },
-      { key: 'run_time', label: 'Время, мин', type: 'number' },
       { key: 'cost', label: 'Стоимость', type: 'currency' },
+      { key: 'equipment', label: 'Оборудование' },
+      { key: 'materials', label: 'Материалы' },
+      { key: 'run_time', label: 'Время, мин', type: 'number' },
     ],
     fields: [
       { key: 'name', label: 'Название операции', type: 'text', required: true },
-      { key: 'type', label: 'Тип операции', type: 'select', options: ['Ламинация', 'Биговка', 'Фальцовка', 'Высечка', 'Сборка', 'Другое'] },
-      { key: 'equipment', label: 'Оборудование', type: 'select', options: () => equipmentOptions.value, placeholder: 'Выберите оборудование' },
-      { key: 'unit', label: 'Единица', type: 'text', placeholder: 'лист, пог. м, услуга' },
-      { key: 'setup_time', label: 'Время подготовки, мин', type: 'text', inputType: 'number' },
-      { key: 'run_time', label: 'Время выполнения, мин', type: 'text', inputType: 'number' },
       { key: 'cost', label: 'Стоимость', type: 'text', inputType: 'number' },
+      { key: 'equipment', label: 'Оборудование', type: 'select', options: () => equipmentOptions.value, placeholder: 'Оборудование' },
+      { key: 'materials', label: 'Материалы', type: 'text', placeholder: 'Ламинационная плёнка, клей' },
+      { key: 'run_time', label: 'Время выполнения, мин', type: 'text', inputType: 'number' },
       { key: 'requirements', label: 'Требования / примечания', type: 'text', fullWidth: true },
     ],
-    filterKey: 'type',
-    filterLabel: 'Тип операции',
-    searchable: ['name', 'equipment', 'requirements'],
+    filterKey: 'equipment',
+    filterLabel: 'Оборудование',
+    searchable: ['name', 'equipment', 'requirements', 'materials'],
   },
   suppliers: {
     title: 'Поставщики',
-    description: 'Контакты, ассортимент, цены и сроки поставок.',
+    description: 'Контакты, сроки доставки, ассортимент и история закупок.',
     columns: [
       { key: 'name', label: 'Поставщик' },
-      { key: 'materials', label: 'Материалы' },
-      { key: 'status', label: 'Статус' },
       { key: 'contact', label: 'Контакты' },
       { key: 'lead_time', label: 'Срок поставки' },
+      { key: 'materials', label: 'Материалы' },
+      { key: 'history', label: 'История закупок' },
     ],
     fields: [
       { key: 'name', label: 'Название', type: 'text', required: true },
       { key: 'materials', label: 'Поставляемые материалы', type: 'text', fullWidth: true },
       { key: 'status', label: 'Статус', type: 'select', options: ['Активный', 'На проверке', 'Остановлен'], required: true },
-      { key: 'contact', label: 'Контакты', type: 'text', placeholder: 'E-mail, телефон или менеджер' },
-      { key: 'prices', label: 'Цены / условия', type: 'text', placeholder: 'Прайс, скидки, предоплата', fullWidth: true },
+      { key: 'contact', label: 'Контакты', type: 'text', placeholder: 'E-mail, телефон или менеджер', required: true },
       { key: 'lead_time', label: 'Сроки доставки', type: 'text', placeholder: '2-3 дня, самовывоз' },
+      { key: 'prices', label: 'Цены / условия', type: 'text', placeholder: 'Прайс, скидки, предоплата', fullWidth: true },
       { key: 'history', label: 'История закупок', type: 'text', fullWidth: true },
     ],
     filterKey: 'status',
@@ -585,43 +599,49 @@ const databaseConfigs = {
   },
   users: {
     title: 'Пользователи',
-    description: 'ПИН-коды, роли и контактные данные.',
+    description: 'Сотрудники с ролями, отделом, контактами и статусом.',
     columns: [
       { key: 'name', label: 'Сотрудник' },
       { key: 'role', label: 'Роль' },
-      { key: 'pin', label: 'ПИН' },
-      { key: 'contact', label: 'Контакт' },
+      { key: 'department', label: 'Отдел' },
+      { key: 'phone', label: 'Телефон' },
+      { key: 'status', label: 'Статус' },
     ],
     fields: [
       { key: 'name', label: 'Имя и фамилия', type: 'text', required: true },
-      { key: 'role', label: 'Роль', type: 'select', options: ['Директор', 'Админ', 'Менеджер', 'Дизайнер', 'Производство'], required: true },
-      { key: 'pin', label: 'ПИН-код', type: 'text', placeholder: 'Например, 1234', required: true, inputType: 'number' },
-      { key: 'contact', label: 'Контакты', type: 'text', placeholder: 'Телефон или почта' },
+      { key: 'pin', label: 'PIN / пароль', type: 'text', placeholder: 'Например, 1234', required: true, inputType: 'number' },
+      { key: 'role', label: 'Роль', type: 'select', options: () => staffRoleOptions.value, placeholder: 'Выберите роль', required: true },
+      { key: 'department', label: 'Отдел', type: 'text', placeholder: 'Производство, менеджеры' },
+      { key: 'phone', label: 'Телефон', type: 'text', required: true },
+      { key: 'email', label: 'Email', type: 'text', placeholder: 'Контакт для связи' },
+      { key: 'status', label: 'Активность', type: 'select', options: ['Активный', 'Скрыт'], required: true },
     ],
     filterKey: 'role',
     filterLabel: 'Роль',
-    searchable: ['name', 'contact', 'pin'],
+    searchable: ['name', 'phone', 'email', 'role'],
   },
   clients: {
     title: 'Клиенты',
-    description: 'База клиентов для заказов и истории.',
+    description: 'Карточки физических лиц с контактами, тегами и источником.',
     columns: [
       { key: 'name', label: 'Клиент' },
-      { key: 'segment', label: 'Сегмент' },
+      { key: 'phone', label: 'Телефон' },
+      { key: 'email', label: 'Email' },
+      { key: 'segment', label: 'Тип' },
+      { key: 'tags', label: 'Теги' },
       { key: 'source', label: 'Источник' },
-      { key: 'contact', label: 'Контакты' },
-      { key: 'note', label: 'Комментарий' },
     ],
     fields: [
-      { key: 'name', label: 'Название клиента', type: 'text', required: true },
-      { key: 'segment', label: 'Сегмент', type: 'select', options: ['B2B', 'B2C', 'Госзаказ'], required: true },
-      { key: 'source', label: 'Источник', type: 'select', options: () => clientSourceOptions.value, placeholder: 'Выберите источник' },
-      { key: 'contact', label: 'Контакты', type: 'text', placeholder: 'email или телефон' },
-      { key: 'note', label: 'Комментарий', type: 'text', placeholder: 'Ответственные, договор, скидка', fullWidth: true },
+      { key: 'name', label: 'Имя клиента', type: 'text', required: true },
+      { key: 'phone', label: 'Телефон', type: 'text', required: true },
+      { key: 'email', label: 'Email', type: 'text', placeholder: 'Опционально' },
+      { key: 'segment', label: 'Тип', type: 'select', options: ['B2B', 'B2C'], required: true },
+      { key: 'tags', label: 'Теги', type: 'text', placeholder: 'VIP, проблемный' },
+      { key: 'source', label: 'Источник клиента', type: 'select', options: () => clientSourceOptions.value, placeholder: 'Выберите источник' },
     ],
     filterKey: 'segment',
     filterLabel: 'Сегмент',
-    searchable: ['name', 'contact', 'note'],
+    searchable: ['name', 'phone', 'email', 'tags'],
   },
   organizations: {
     title: 'Организации',
@@ -630,56 +650,58 @@ const databaseConfigs = {
       { key: 'name', label: 'Организация' },
       { key: 'inn', label: 'ИНН' },
       { key: 'kpp', label: 'КПП' },
-      { key: 'vat_status', label: 'НДС' },
+      { key: 'legal_address', label: 'Юр. адрес' },
+      { key: 'contact_person', label: 'Контакт' },
+      { key: 'phone', label: 'Телефон' },
       { key: 'payment_terms', label: 'Оплата' },
     ],
     fields: [
       { key: 'name', label: 'Название', type: 'text', required: true },
       { key: 'inn', label: 'ИНН', type: 'text', inputType: 'number', required: true },
       { key: 'kpp', label: 'КПП', type: 'text', inputType: 'number' },
-      { key: 'vat_status', label: 'Статус НДС', type: 'select', options: ['С НДС', 'Без НДС', 'УСН'], required: true },
-      { key: 'payment_terms', label: 'Платёжные условия', type: 'text', placeholder: '100% предоплата / отсрочка 5 дней' },
+      { key: 'legal_address', label: 'Юридический адрес', type: 'text', required: true },
       { key: 'contact_person', label: 'Контактное лицо', type: 'text' },
-      { key: 'note', label: 'Комментарий', type: 'text', fullWidth: true },
+      { key: 'phone', label: 'Телефон', type: 'text', required: true },
+      { key: 'email', label: 'Email', type: 'text', placeholder: 'Бухгалтерия/контракты' },
+      { key: 'payment_terms', label: 'Платёжные условия', type: 'text', placeholder: 'постоплата, предоплата' },
     ],
-    filterKey: 'vat_status',
-    filterLabel: 'Статус НДС',
-    searchable: ['name', 'inn', 'kpp', 'contact_person'],
+    filterKey: 'payment_terms',
+    filterLabel: 'Оплата',
+    searchable: ['name', 'inn', 'kpp', 'contact_person', 'phone'],
   },
   clientSources: {
     title: 'Источники клиентов',
-    description: 'Каналы привлечения с конверсией и стоимостью лида.',
+    description: 'Каналы привлечения с типом и стоимостью лида.',
     columns: [
       { key: 'name', label: 'Канал' },
-      { key: 'conversion', label: 'Конверсия, %', type: 'number' },
       { key: 'cpl', label: 'Стоимость лида', type: 'currency' },
-      { key: 'note', label: 'Комментарий' },
+      { key: 'lead_type', label: 'Тип' },
     ],
     fields: [
       { key: 'name', label: 'Источник', type: 'text', required: true },
-      { key: 'conversion', label: 'Конверсия, %', type: 'text', inputType: 'number' },
       { key: 'cpl', label: 'Стоимость лида', type: 'text', inputType: 'number' },
+      { key: 'lead_type', label: 'Тип канала', type: 'select', options: ['Онлайн', 'Офлайн'] },
       { key: 'note', label: 'Комментарий', type: 'text', placeholder: 'UTM, кампания', fullWidth: true },
     ],
     filterKey: 'name',
     filterLabel: 'Источник',
-    searchable: ['name', 'note'],
+    searchable: ['name', 'note', 'lead_type'],
   },
   staffRoles: {
     title: 'Роли, навыки и должности',
     description: 'Доступы, навыки и назначение на оборудование.',
     columns: [
       { key: 'name', label: 'Роль/должность' },
-      { key: 'access', label: 'Доступы' },
+      { key: 'permissions', label: 'Разрешения' },
       { key: 'skills', label: 'Навыки' },
       { key: 'equipment_access', label: 'Оборудование' },
     ],
     fields: [
       { key: 'name', label: 'Роль или должность', type: 'text', required: true },
-      { key: 'access', label: 'Доступы', type: 'text', placeholder: 'Модули, права' },
-      { key: 'skills', label: 'Навыки', type: 'text', placeholder: 'Принтеры, постпечать', fullWidth: true },
+      { key: 'permissions', label: 'Разрешения', type: 'text', placeholder: 'Доступ к кассе/складу/аналитике' },
+      { key: 'skills', label: 'Навыки', type: 'text', placeholder: 'Умеет работать: резак, УФ-принтер', fullWidth: true },
       { key: 'equipment_access', label: 'Работает на оборудовании', type: 'text', placeholder: 'HP Latex, ламинатор' },
-      { key: 'duties', label: 'Обязанности', type: 'text', fullWidth: true },
+      { key: 'duties', label: 'Должностные обязанности', type: 'text', fullWidth: true },
     ],
     filterKey: 'name',
     filterLabel: 'Роль',
@@ -925,6 +947,35 @@ function formatValue(item, column) {
 </script>
 
 <style scoped>
+.directory-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  margin-top: 16px;
+}
+
+.directory-group {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.group-head {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.group-title {
+  font-size: 18px;
+  font-weight: 800;
+}
+
+.group-subtitle {
+  color: #9ca3af;
+  font-size: 13px;
+}
+
 .directories-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
