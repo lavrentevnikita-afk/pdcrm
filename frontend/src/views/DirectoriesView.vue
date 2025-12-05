@@ -486,11 +486,27 @@ const resolveAlias = (record, key) => {
 };
 
 const displayValue = (record, column) => {
-  const raw = record?.[column.key];
-  const alias = resolveAlias(record, column.key);
-  const value = raw !== undefined && raw !== null && raw !== '' ? raw : alias;
+  const key = column.key;
+  const rawRecord = record?.__raw || record;
+  const snakeKey = toSnake(key);
+  const camelKey = toCamel(key);
 
-  if (value === undefined || value === null || value === '') return '—';
+  const candidates = [
+    record?.[key],
+    record?.data?.[key],
+    record?.[camelKey],
+    record?.[snakeKey],
+    resolveAlias(record, key),
+    rawRecord?.[key],
+    rawRecord?.data?.[key],
+    rawRecord?.[camelKey],
+    rawRecord?.[snakeKey],
+    resolveAlias(rawRecord, key),
+  ];
+
+  const value = candidates.find((v) => v !== undefined && v !== null && v !== '');
+
+  if (value === undefined) return '';
   if (typeof value === 'object') return value.label || value.name || JSON.stringify(value);
   if (typeof value === 'boolean') return value ? 'Да' : 'Нет';
   return value;
@@ -505,7 +521,7 @@ async function loadDatabase(key) {
   const knownKeys = new Set(['id', ...columnKeys, ...fieldKeys]);
 
   records[key] = (data.records || []).map((record) => {
-    const normalized = { ...record };
+    const normalized = { ...record, __raw: { ...record } };
 
     // Align backend keys (snake_case / camelCase) to the keys that the UI renders
     knownKeys.forEach((k) => {
