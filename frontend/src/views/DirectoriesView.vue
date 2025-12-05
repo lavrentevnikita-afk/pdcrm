@@ -45,7 +45,7 @@
     </div>
 
     <div v-if="activeDatabase" class="modal-backdrop" @click.self="closeModal">
-      <div class="modal">
+      <div class="modal" :style="modalStyle">
         <div class="modal-header">
           <div>
             <div class="modal-title">{{ currentConfig.title }}</div>
@@ -164,8 +164,10 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref, watch } from 'vue';
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
 import axios from 'axios';
+
+const windowWidth = ref(typeof window !== 'undefined' ? window.innerWidth : 1200);
 
 const databaseGroups = [
   {
@@ -769,6 +771,19 @@ const filters = reactive(
 );
 
 const currentConfig = computed(() => databaseConfigs[activeDatabase.value] || {});
+
+const modalStyle = computed(() => {
+  const columnsCount = currentConfig.value.columns?.length || 0;
+  const columnWidth = 180;
+  const actionsWidth = 220;
+  const baseWidth = 720;
+  const estimated = columnsCount * columnWidth + actionsWidth;
+  const maxWidth = Math.max(360, windowWidth.value - 32);
+  const width = Math.min(Math.max(baseWidth, estimated), maxWidth);
+
+  return { width: `${width}px`, maxWidth: `${maxWidth}px` };
+});
+
 const availableFilters = computed(() => {
   if (!activeDatabase.value) return [];
   const filterKey = currentConfig.value.filterKey;
@@ -798,6 +813,12 @@ const filteredRecords = computed(() => {
 
 onMounted(() => {
   preloadAll();
+  updateWindowWidth();
+  window.addEventListener('resize', updateWindowWidth);
+});
+
+onUnmounted(() => {
+  window.removeEventListener('resize', updateWindowWidth);
 });
 
 function withDerivedFields(item) {
@@ -813,6 +834,10 @@ function withDerivedFields(item) {
     };
   }
   return item;
+}
+
+function updateWindowWidth() {
+  windowWidth.value = window.innerWidth;
 }
 
 function openDatabase(key) {
@@ -1171,7 +1196,8 @@ function formatValue(item, column) {
   border: 1px solid #1f2937;
   border-radius: 16px;
   padding: 20px;
-  width: min(1200px, 100%);
+  width: auto;
+  max-width: calc(100vw - 32px);
   display: flex;
   flex-direction: column;
   gap: 16px;
