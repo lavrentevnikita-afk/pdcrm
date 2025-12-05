@@ -65,7 +65,7 @@ function createToken(user) {
 }
 
 // Auth middleware
-function authMiddleware(req, res, next) {
+async function authMiddleware(req, res, next) {
   const authHeader = req.headers.authorization || '';
   const [, token] = authHeader.split(' ');
 
@@ -75,7 +75,23 @@ function authMiddleware(req, res, next) {
 
   try {
     const payload = jwt.verify(token, JWT_SECRET);
-    req.user = payload;
+
+    const dbUser = await knex('users')
+      .where({ id: payload.id, is_active: 1 })
+      .first();
+
+    if (!dbUser) {
+      return res
+        .status(401)
+        .json({ message: 'Пользователь не найден, войдите снова' });
+    }
+
+    req.user = {
+      id: dbUser.id,
+      name: dbUser.name,
+      role: dbUser.role,
+    };
+
     return next();
   } catch (err) {
     console.error('JWT verify error', err);
