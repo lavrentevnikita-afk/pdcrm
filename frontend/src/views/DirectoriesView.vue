@@ -18,7 +18,7 @@
         </div>
         <div class="card-meta">
           <div class="meta-count">
-            <span class="count-number">{{ records[db.key].length }}</span>
+            <span class="count-number">{{ (records[db.key] || []).length }}</span>
             <span class="count-label">записей</span>
           </div>
           <div class="meta-tags">
@@ -123,7 +123,7 @@
               :required="field.required"
             >
               <option value="" disabled>Выберите</option>
-              <option v-for="option in field.options" :key="option" :value="option">
+              <option v-for="option in fieldOptions(field)" :key="option" :value="option">
                 {{ option }}
               </option>
             </select>
@@ -142,7 +142,8 @@
 </template>
 
 <script setup>
-import { computed, reactive, ref } from 'vue';
+import { computed, onMounted, reactive, ref } from 'vue';
+import axios from 'axios';
 
 const databases = [
   {
@@ -172,27 +173,13 @@ const databases = [
 ];
 
 const records = reactive({
-  products: [
-    { id: 1, name: 'Визитки стандарт', category: 'Печать', sku: 'PR-001', note: 'Бумага 350 г/м²' },
-    { id: 2, name: 'Каталог А4', category: 'Печать', sku: 'PR-024', note: 'Скрепка, 32 страницы' },
-    { id: 3, name: 'Бренд-пакеты', category: 'Сувениры', sku: 'PR-065', note: 'Крафт, полноцвет' },
-    { id: 4, name: 'Роллап 85×200', category: 'Выставка', sku: 'PR-112', note: 'Серебро, сумка в комплекте' },
-  ],
-  clients: [
-    { id: 5, name: 'ООО «Север»', segment: 'B2B', contact: 'sales@sever.ru', note: 'Регулярные тиражи буклетов' },
-    { id: 6, name: 'ИП Иванова', segment: 'B2C', contact: 'ivanova@example.com', note: 'Рекламные листовки' },
-    { id: 7, name: 'Digital Fox', segment: 'B2B', contact: 'hi@dfox.ru', note: 'Корпоративный мерч' },
-  ],
-  materials: [
-    { id: 8, name: 'Мелованная бумага 170 г/м²', type: 'Бумага', unit: 'лист', note: 'Белая, глянец' },
-    { id: 9, name: 'Баннер 440 г/м²', type: 'Баннер', unit: 'м²', note: 'Литой, широкоформат' },
-    { id: 10, name: 'Ламинат 75 мкм', type: 'Пленка', unit: 'рулон', note: 'Матовый' },
-  ],
-  suppliers: [
-    { id: 11, name: 'Поставка Плюс', status: 'Активный', contact: 'supply@plus.ru', note: 'Основной по бумаге' },
-    { id: 12, name: 'Графика', status: 'На проверке', contact: 'hello@grafica.ru', note: 'Сувенирка' },
-  ],
+  products: [],
+  clients: [],
+  materials: [],
+  suppliers: [],
 });
+
+const categoryOptions = ref([]);
 
 const databaseConfigs = {
   products: {
@@ -206,7 +193,7 @@ const databaseConfigs = {
     ],
     fields: [
       { key: 'name', label: 'Название', type: 'text', placeholder: 'Например, «Каталог А4»', required: true },
-      { key: 'category', label: 'Категория', type: 'select', options: ['Печать', 'Выставка', 'Сувениры', 'Другое'], required: true },
+      { key: 'category', label: 'Категория', type: 'select', options: categoryOptions, required: true },
       { key: 'sku', label: 'SKU', type: 'text', placeholder: 'PR-001', required: true },
       { key: 'note', label: 'Комментарий', type: 'text', placeholder: 'Материал, тираж или особенности', fullWidth: true },
     ],
@@ -289,7 +276,11 @@ const availableFilters = computed(() => {
   if (!activeDatabase.value) return [];
   const filterKey = currentConfig.value.filterKey;
   if (!filterKey) return [];
-  const options = new Set(records[activeDatabase.value].map((item) => item[filterKey]).filter(Boolean));
+  const options = new Set(
+    (records[activeDatabase.value] || [])
+      .map((item) => item[filterKey])
+      .filter(Boolean)
+  );
   return Array.from(options);
 });
 
@@ -297,7 +288,7 @@ const filteredRecords = computed(() => {
   if (!activeDatabase.value) return [];
   const { search, filter } = filters[activeDatabase.value];
   const config = currentConfig.value;
-  return records[activeDatabase.value]
+  return (records[activeDatabase.value] || [])
     .filter((item) => {
       if (filter && config.filterKey) {
         return (item[config.filterKey] || '').toLowerCase() === filter.toLowerCase();
@@ -307,12 +298,34 @@ const filteredRecords = computed(() => {
     .filter((item) => {
       if (!search) return true;
       const query = search.toLowerCase();
-      return config.searchable.some((key) => String(item[key] || '').toLowerCase().includes(query));
+      return (config.searchable || []).some((key) =>
+        String(item[key] || '').toLowerCase().includes(query)
+      );
     });
 });
 
+const fieldOptions = (field) => {
+  if (Array.isArray(field.options)) return field.options;
+  if (field.options?.value) return field.options.value;
+  return field.options || [];
+};
+
+async function loadDatabase(key) {
+  const { data } = await axios.get(`/api/directories/${key}`);
+  records[key] = data.records || [];
+
+  if (key === 'products') {
+    categoryOptions.value = data.meta?.categories || [];
+  }
+}
+
+async function loadAll() {
+  await Promise.all(databases.map((db) => loadDatabase(db.key)));
+}
+
 function openDatabase(key) {
   activeDatabase.value = key;
+  loadDatabase(key);
   resetForm();
   filters[key].search = '';
   filters[key].filter = '';
@@ -350,26 +363,25 @@ function resetForm() {
   editingId.value = null;
 }
 
-function deleteRecord(id) {
+async function deleteRecord(id) {
   if (!activeDatabase.value) return;
-  records[activeDatabase.value] = records[activeDatabase.value].filter((item) => item.id !== id);
+  await axios.delete(`/api/directories/${activeDatabase.value}/${id}`);
+  await loadDatabase(activeDatabase.value);
 }
 
-function saveRecord() {
+async function saveRecord() {
   if (!activeDatabase.value) return;
+  const payload = { ...form.value };
   if (editingId.value) {
-    records[activeDatabase.value] = records[activeDatabase.value].map((item) =>
-      item.id === editingId.value ? { ...item, ...form.value } : item
-    );
+    await axios.put(`/api/directories/${activeDatabase.value}/${editingId.value}`, payload);
   } else {
-    const maxId = Math.max(0, ...Object.values(records).flat().map((item) => item.id));
-    records[activeDatabase.value].push({
-      id: maxId + 1,
-      ...form.value,
-    });
+    await axios.post(`/api/directories/${activeDatabase.value}`, payload);
   }
+  await loadDatabase(activeDatabase.value);
   resetForm();
 }
+
+onMounted(loadAll);
 </script>
 
 <style scoped>
