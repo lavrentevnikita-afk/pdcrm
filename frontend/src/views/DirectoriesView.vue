@@ -427,6 +427,23 @@ async function loadDatabase(key) {
   const toSnake = (value) =>
     value.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`);
 
+  const resolveAlias = (record, key) => {
+    const camel = toCamel(key);
+    const snake = toSnake(key);
+
+    const aliasCandidates = [
+      `${key}_name`,
+      `${key}_label`,
+      `${camel}Name`,
+      `${camel}Label`,
+      `${snake}_name`,
+      `${snake}_label`,
+    ];
+
+    const found = aliasCandidates.find((candidate) => record[candidate] !== undefined);
+    return found ? record[found] : undefined;
+  };
+
   records[key] = (data.records || []).map((record) => {
     const normalized = { ...record };
 
@@ -435,12 +452,15 @@ async function loadDatabase(key) {
       if (normalized[k] !== undefined) return;
       const camel = toCamel(k);
       const snake = toSnake(k);
+      const aliasValue = resolveAlias(record, k);
       normalized[k] =
         record?.[camel] !== undefined
           ? record[camel]
           : record?.[snake] !== undefined
             ? record[snake]
-            : record?.[k];
+            : aliasValue !== undefined
+              ? aliasValue
+              : record?.[k];
     });
 
     return normalized;
