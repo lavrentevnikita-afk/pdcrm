@@ -1291,6 +1291,61 @@ app.get('/api/directories/:type', authMiddleware, async (req, res, next) => {
   }
 });
 
+app.get('/api/directories/:type/export', authMiddleware, async (req, res, next) => {
+  try {
+    const { type } = req.params;
+    ensureDirectoryType(type);
+
+    const rows = await knex('directories').where({ type }).orderBy('id', 'asc');
+
+    const items = rows.map((row) => ({
+      id: row.id,
+      created_at: row.created_at,
+      updated_at: row.updated_at,
+      ...(row.data ? JSON.parse(row.data) : {}),
+    }));
+
+    res.setHeader('Content-Disposition', `attachment; filename="${type}-directories.json"`);
+    return res.json({ items });
+  } catch (err) {
+    return next(err);
+  }
+});
+
+app.post('/api/directories/:type/import', authMiddleware, async (req, res, next) => {
+  try {
+    const { type } = req.params;
+    ensureDirectoryType(type);
+
+    const items = req.body?.items;
+    if (!Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ message: 'Ожидается список записей для импорта' });
+    }
+
+    const now = new Date().toISOString();
+
+    await knex.transaction(async (trx) => {
+      for (const entry of items) {
+        const source = entry || {};
+        const { id, created_at, updated_at, ...data } = source;
+        const createdAt = created_at || now;
+        const updatedAt = updated_at || createdAt;
+
+        await trx('directories').insert({
+          type,
+          data: JSON.stringify(data || {}),
+          created_at: createdAt,
+          updated_at: updatedAt,
+        });
+      }
+    });
+
+    return res.status(201).json({ inserted: items.length });
+  } catch (err) {
+    return next(err);
+  }
+});
+
 app.post('/api/directories/:type', authMiddleware, async (req, res, next) => {
   try {
     const { type } = req.params;

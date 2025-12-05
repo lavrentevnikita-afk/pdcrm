@@ -78,9 +78,13 @@
               </option>
             </select>
           </label>
-          <button class="btn btn-primary" type="button" @click="startCreate(activeDatabase)">
-            Новая запись
-          </button>
+          <div class="toolbar-actions">
+            <button class="btn" type="button" @click="exportData">Экспорт</button>
+            <button class="btn" type="button" @click="triggerImport">Импорт</button>
+            <button class="btn btn-primary" type="button" @click="startCreate(activeDatabase)">
+              Новая запись
+            </button>
+          </div>
         </div>
 
         <div class="table">
@@ -148,6 +152,14 @@
         </form>
       </div>
     </div>
+
+    <input
+      ref="importInput"
+      type="file"
+      accept="application/json"
+      class="hidden-file-input"
+      @change="handleImport"
+    />
   </div>
 </template>
 
@@ -295,6 +307,7 @@ const loading = reactive(
 
 const saving = ref(false);
 const errorMessage = ref('');
+const importInput = ref(null);
 
 const productCategoryOptions = computed(() =>
   (records.productCategories || []).map((item) => item.name || `Категория #${item.id}`)
@@ -937,6 +950,53 @@ async function preloadAll() {
   await Promise.all(Object.keys(records).map((key) => fetchRecords(key)));
 }
 
+async function exportData() {
+  if (!activeDatabase.value) return;
+  errorMessage.value = '';
+
+  try {
+    const { data } = await axios.get(`/api/directories/${activeDatabase.value}/export`);
+    const json = JSON.stringify(data.items || [], null, 2);
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${activeDatabase.value}-export.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+  } catch (err) {
+    console.error(err);
+    errorMessage.value = err.response?.data?.message || 'Не удалось экспортировать данные';
+  }
+}
+
+function triggerImport() {
+  if (!activeDatabase.value) return;
+  importInput.value?.click();
+}
+
+async function handleImport(event) {
+  if (!activeDatabase.value) return;
+  const file = event.target.files?.[0];
+  if (!file) return;
+
+  try {
+    const content = await file.text();
+    const items = JSON.parse(content);
+    if (!Array.isArray(items)) {
+      throw new Error('Импортируемый файл должен содержать массив записей');
+    }
+
+    await axios.post(`/api/directories/${activeDatabase.value}/import`, { items });
+    await fetchRecords(activeDatabase.value);
+  } catch (err) {
+    console.error(err);
+    errorMessage.value = err.response?.data?.message || err.message || 'Не удалось импортировать данные';
+  } finally {
+    event.target.value = '';
+  }
+}
+
 watch(
   () => [form.value.tirage, form.value.unit_price],
   () => {
@@ -1146,9 +1206,15 @@ function formatValue(item, column) {
 
 .modal-toolbar {
   display: grid;
-  grid-template-columns: 1fr 240px 140px;
+  grid-template-columns: 1fr 240px auto;
   gap: 12px;
   align-items: end;
+}
+
+.toolbar-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
 }
 
 .search-field,
@@ -1172,6 +1238,10 @@ select {
   color: #e5e7eb;
   border-radius: 10px;
   padding: 10px 12px;
+}
+
+.hidden-file-input {
+  display: none;
 }
 
 .table {
