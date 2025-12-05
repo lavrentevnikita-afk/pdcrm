@@ -2,8 +2,8 @@
   <div class="directories-page">
     <div class="page-title">Справочники</div>
     <div class="page-subtitle">
-      Управление базами данных через удобные модальные окна с поиском, фильтрацией
-      и быстрым редактированием.
+      Управляйте пользовательскими ролями, номенклатурой продукции, клиентами и
+      кассовыми сменами без лишних заглушек.
     </div>
 
     <div class="directories-grid">
@@ -18,7 +18,7 @@
         </div>
         <div class="card-meta">
           <div class="meta-count">
-            <span class="count-number">{{ records[db.key].length }}</span>
+            <span class="count-number">{{ (records[db.key] || []).length }}</span>
             <span class="count-label">записей</span>
           </div>
           <div class="meta-tags">
@@ -86,7 +86,7 @@
             class="table-row"
           >
             <div v-for="column in currentConfig.columns" :key="column.key">
-              {{ item[column.key] || '—' }}
+              {{ formatValue(item, column) }}
             </div>
             <div class="actions-col actions-col-body">
               <button class="btn" type="button" @click="startEdit(item)">Редактировать</button>
@@ -142,81 +142,133 @@
 </template>
 
 <script setup>
-import { computed, reactive, ref } from 'vue';
+import { computed, reactive, ref, watch } from 'vue';
 
 const databases = [
   {
+    key: 'users',
+    title: 'Пользователи',
+    description: 'Роли, ПИН-коды и контакты для входа в систему.',
+    tags: ['Доступ', 'Роли'],
+  },
+  {
+    key: 'productCategories',
+    title: 'Категории продукции',
+    description: 'Категории и группы товаров для калькулятора заказов.',
+    tags: ['Калькулятор', 'Категории'],
+  },
+  {
     key: 'products',
-    title: 'Продукция',
-    description: 'Каталог продукции разбит по категориям и типам работ.',
-    tags: ['Категории', 'SKU', 'Тиражи'],
+    title: 'Продукция с ценами',
+    description: 'Номенклатура с тиражностью и автоскидками.',
+    tags: ['SKU', 'Цены', 'Тираж'],
   },
   {
     key: 'clients',
     title: 'Клиенты',
-    description: 'Сегменты клиентов, контактные данные и примечания.',
+    description: 'Карточки клиентов для быстрого выбора в заказе.',
     tags: ['B2B', 'B2C'],
+  },
+  {
+    key: 'organizations',
+    title: 'Организации',
+    description: 'Реквизиты компаний и налоговый статус.',
+    tags: ['Юрлица', 'Договоры'],
   },
   {
     key: 'materials',
     title: 'Материалы',
-    description: 'Бумага, расходники и материалы для типографии.',
+    description: 'Материалы и расходники для производства.',
     tags: ['Склад', 'Закупки'],
   },
   {
     key: 'suppliers',
     title: 'Поставщики',
-    description: 'Базы поставщиков с контактами и статусами.',
+    description: 'Поставщики материалов с контактами.',
     tags: ['Контракты', 'Согласования'],
+  },
+  {
+    key: 'cashShifts',
+    title: 'Кассовые смены',
+    description: 'История смен с возможностью корректировать записи.',
+    tags: ['Касса', 'История'],
   },
 ];
 
 const records = reactive({
-  products: [
-    { id: 1, name: 'Визитки стандарт', category: 'Печать', sku: 'PR-001', note: 'Бумага 350 г/м²' },
-    { id: 2, name: 'Каталог А4', category: 'Печать', sku: 'PR-024', note: 'Скрепка, 32 страницы' },
-    { id: 3, name: 'Бренд-пакеты', category: 'Сувениры', sku: 'PR-065', note: 'Крафт, полноцвет' },
-    { id: 4, name: 'Роллап 85×200', category: 'Выставка', sku: 'PR-112', note: 'Серебро, сумка в комплекте' },
-  ],
-  clients: [
-    { id: 5, name: 'ООО «Север»', segment: 'B2B', contact: 'sales@sever.ru', note: 'Регулярные тиражи буклетов' },
-    { id: 6, name: 'ИП Иванова', segment: 'B2C', contact: 'ivanova@example.com', note: 'Рекламные листовки' },
-    { id: 7, name: 'Digital Fox', segment: 'B2B', contact: 'hi@dfox.ru', note: 'Корпоративный мерч' },
-  ],
-  materials: [
-    { id: 8, name: 'Мелованная бумага 170 г/м²', type: 'Бумага', unit: 'лист', note: 'Белая, глянец' },
-    { id: 9, name: 'Баннер 440 г/м²', type: 'Баннер', unit: 'м²', note: 'Литой, широкоформат' },
-    { id: 10, name: 'Ламинат 75 мкм', type: 'Пленка', unit: 'рулон', note: 'Матовый' },
-  ],
-  suppliers: [
-    { id: 11, name: 'Поставка Плюс', status: 'Активный', contact: 'supply@plus.ru', note: 'Основной по бумаге' },
-    { id: 12, name: 'Графика', status: 'На проверке', contact: 'hello@grafica.ru', note: 'Сувенирка' },
-  ],
+  users: [],
+  productCategories: [],
+  products: [],
+  clients: [],
+  organizations: [],
+  materials: [],
+  suppliers: [],
+  cashShifts: [],
 });
 
 const databaseConfigs = {
+  users: {
+    title: 'Пользователи',
+    description: 'Создание пользователей, ролей и ПИН-кодов.',
+    columns: [
+      { key: 'name', label: 'Сотрудник' },
+      { key: 'role', label: 'Роль' },
+      { key: 'pin', label: 'ПИН' },
+      { key: 'contact', label: 'Контакт' },
+    ],
+    fields: [
+      { key: 'name', label: 'Имя и фамилия', type: 'text', required: true },
+      { key: 'role', label: 'Роль', type: 'select', options: ['Директор', 'Админ', 'Менеджер', 'Дизайнер', 'Производство'], required: true },
+      { key: 'pin', label: 'ПИН-код', type: 'text', placeholder: 'Например, 1234', required: true, inputType: 'number' },
+      { key: 'contact', label: 'Контакты', type: 'text', placeholder: 'Телефон или почта' },
+    ],
+    filterKey: 'role',
+    filterLabel: 'Роль',
+    searchable: ['name', 'contact', 'pin'],
+  },
+  productCategories: {
+    title: 'Категории продукции',
+    description: 'Структура каталога для калькулятора заказов.',
+    columns: [
+      { key: 'name', label: 'Категория' },
+      { key: 'code', label: 'Код' },
+      { key: 'description', label: 'Описание' },
+    ],
+    fields: [
+      { key: 'name', label: 'Название категории', type: 'text', required: true },
+      { key: 'code', label: 'Код', type: 'text', placeholder: 'print, textile, souvenir' },
+      { key: 'description', label: 'Описание', type: 'text', fullWidth: true },
+    ],
+    filterKey: 'code',
+    filterLabel: 'Код категории',
+    searchable: ['name', 'description', 'code'],
+  },
   products: {
-    title: 'Каталог продукции',
-    description: 'Добавляйте новые позиции, редактируйте SKU и категории.',
+    title: 'Продукция с ценами',
+    description: 'Позиции каталога с тиражом, ценой и автоскидкой.',
     columns: [
       { key: 'name', label: 'Название' },
       { key: 'category', label: 'Категория' },
-      { key: 'sku', label: 'SKU' },
-      { key: 'note', label: 'Комментарий' },
+      { key: 'unit_price', label: 'Цена за ед.', type: 'currency' },
+      { key: 'tirage', label: 'Тираж', type: 'number' },
+      { key: 'discount', label: 'Скидка, %', type: 'number' },
+      { key: 'total_price', label: 'Итог по позиции', type: 'currency' },
     ],
     fields: [
-      { key: 'name', label: 'Название', type: 'text', placeholder: 'Например, «Каталог А4»', required: true },
-      { key: 'category', label: 'Категория', type: 'select', options: ['Печать', 'Выставка', 'Сувениры', 'Другое'], required: true },
-      { key: 'sku', label: 'SKU', type: 'text', placeholder: 'PR-001', required: true },
-      { key: 'note', label: 'Комментарий', type: 'text', placeholder: 'Материал, тираж или особенности', fullWidth: true },
+      { key: 'name', label: 'Название', type: 'text', placeholder: 'Например, «Визитки премиум»', required: true },
+      { key: 'category', label: 'Категория', type: 'select', options: ['Печать', 'Текстиль', 'Сувениры', 'Керамика', 'Другое'], required: true },
+      { key: 'unit_price', label: 'Цена за единицу, ₽', type: 'text', inputType: 'number', required: true },
+      { key: 'tirage', label: 'Тираж', type: 'text', inputType: 'number', required: true },
+      { key: 'discount', label: 'Скидка % (авто)', type: 'text', inputType: 'number', placeholder: 'Заполнится автоматически' },
+      { key: 'total_price', label: 'Итог', type: 'text', inputType: 'number', placeholder: 'Автоподсчёт', fullWidth: true },
     ],
     filterKey: 'category',
     filterLabel: 'Категория',
-    searchable: ['name', 'note', 'sku'],
+    searchable: ['name', 'category'],
   },
   clients: {
-    title: 'База клиентов',
-    description: 'Сегменты клиентов, контакты и примечания.',
+    title: 'Клиенты',
+    description: 'База клиентов для быстрого выбора в заказе.',
     columns: [
       { key: 'name', label: 'Клиент' },
       { key: 'segment', label: 'Сегмент' },
@@ -232,6 +284,26 @@ const databaseConfigs = {
     filterKey: 'segment',
     filterLabel: 'Сегмент',
     searchable: ['name', 'contact', 'note'],
+  },
+  organizations: {
+    title: 'Организации',
+    description: 'Реквизиты и статусы компаний.',
+    columns: [
+      { key: 'name', label: 'Организация' },
+      { key: 'inn', label: 'ИНН' },
+      { key: 'kpp', label: 'КПП' },
+      { key: 'vat_status', label: 'НДС' },
+    ],
+    fields: [
+      { key: 'name', label: 'Название', type: 'text', required: true },
+      { key: 'inn', label: 'ИНН', type: 'text', inputType: 'number', required: true },
+      { key: 'kpp', label: 'КПП', type: 'text', inputType: 'number' },
+      { key: 'vat_status', label: 'Статус НДС', type: 'select', options: ['С НДС', 'Без НДС', 'УСН'], required: true },
+      { key: 'note', label: 'Комментарий', type: 'text', fullWidth: true },
+    ],
+    filterKey: 'vat_status',
+    filterLabel: 'Статус НДС',
+    searchable: ['name', 'inn', 'kpp'],
   },
   materials: {
     title: 'Материалы и расходники',
@@ -271,6 +343,27 @@ const databaseConfigs = {
     filterLabel: 'Статус',
     searchable: ['name', 'note', 'contact'],
   },
+  cashShifts: {
+    title: 'Кассовые смены',
+    description: 'Фиксируйте открытия и закрытия смен с поправками.',
+    columns: [
+      { key: 'shift_date', label: 'Дата' },
+      { key: 'cashier', label: 'Ответственный' },
+      { key: 'opening_balance', label: 'Открытие, ₽', type: 'currency' },
+      { key: 'closing_balance', label: 'Закрытие, ₽', type: 'currency' },
+      { key: 'note', label: 'Комментарий' },
+    ],
+    fields: [
+      { key: 'shift_date', label: 'Дата смены', type: 'text', inputType: 'date', required: true },
+      { key: 'cashier', label: 'Кассир', type: 'text', required: true },
+      { key: 'opening_balance', label: 'Открытие (₽)', type: 'text', inputType: 'number', required: true },
+      { key: 'closing_balance', label: 'Закрытие (₽)', type: 'text', inputType: 'number', required: true },
+      { key: 'note', label: 'Комментарий', type: 'text', fullWidth: true },
+    ],
+    filterKey: 'cashier',
+    filterLabel: 'Кассир',
+    searchable: ['cashier', 'note', 'shift_date'],
+  },
 };
 
 const activeDatabase = ref('');
@@ -289,7 +382,7 @@ const availableFilters = computed(() => {
   if (!activeDatabase.value) return [];
   const filterKey = currentConfig.value.filterKey;
   if (!filterKey) return [];
-  const options = new Set(records[activeDatabase.value].map((item) => item[filterKey]).filter(Boolean));
+  const options = new Set((records[activeDatabase.value] || []).map((item) => item[filterKey]).filter(Boolean));
   return Array.from(options);
 });
 
@@ -297,10 +390,11 @@ const filteredRecords = computed(() => {
   if (!activeDatabase.value) return [];
   const { search, filter } = filters[activeDatabase.value];
   const config = currentConfig.value;
-  return records[activeDatabase.value]
+  return (records[activeDatabase.value] || [])
+    .map((item) => withDerivedFields(item))
     .filter((item) => {
       if (filter && config.filterKey) {
-        return (item[config.filterKey] || '').toLowerCase() === filter.toLowerCase();
+        return (item[config.filterKey] || '').toString().toLowerCase() === filter.toLowerCase();
       }
       return true;
     })
@@ -310,6 +404,21 @@ const filteredRecords = computed(() => {
       return config.searchable.some((key) => String(item[key] || '').toLowerCase().includes(query));
     });
 });
+
+function withDerivedFields(item) {
+  if (activeDatabase.value === 'products') {
+    const tirage = Number(item.tirage) || 0;
+    const unitPrice = Number(item.unit_price) || 0;
+    const discount = Number(item.discount) || autoDiscountForTirage(tirage);
+    const total = Math.round(tirage * unitPrice * (1 - discount / 100));
+    return {
+      ...item,
+      discount,
+      total_price: total,
+    };
+  }
+  return item;
+}
 
 function openDatabase(key) {
   activeDatabase.value = key;
@@ -330,45 +439,102 @@ function startCreate(key) {
   editingId.value = null;
   const fields = databaseConfigs[activeDatabase.value].fields;
   form.value = fields.reduce((acc, field) => {
-    acc[field.key] = '';
+    acc[field.key] = field.default ?? '';
     return acc;
   }, {});
+  if (activeDatabase.value === 'products') {
+    refreshProductTotals();
+  }
 }
 
 function startEdit(item) {
   editingId.value = item.id;
   form.value = { ...item };
+  if (activeDatabase.value === 'products') {
+    refreshProductTotals();
+  }
 }
 
 function resetForm() {
   if (!activeDatabase.value) return;
   const fields = databaseConfigs[activeDatabase.value].fields;
   form.value = fields.reduce((acc, field) => {
-    acc[field.key] = '';
+    acc[field.key] = field.default ?? '';
     return acc;
   }, {});
   editingId.value = null;
+  if (activeDatabase.value === 'products') {
+    refreshProductTotals();
+  }
 }
 
 function deleteRecord(id) {
   if (!activeDatabase.value) return;
-  records[activeDatabase.value] = records[activeDatabase.value].filter((item) => item.id !== id);
+  records[activeDatabase.value] = (records[activeDatabase.value] || []).filter((item) => item.id !== id);
 }
 
 function saveRecord() {
   if (!activeDatabase.value) return;
+  const payload = normalizePayload();
   if (editingId.value) {
-    records[activeDatabase.value] = records[activeDatabase.value].map((item) =>
-      item.id === editingId.value ? { ...item, ...form.value } : item
+    records[activeDatabase.value] = (records[activeDatabase.value] || []).map((item) =>
+      item.id === editingId.value ? { ...item, ...payload } : item
     );
   } else {
-    const maxId = Math.max(0, ...Object.values(records).flat().map((item) => item.id));
+    const maxId = Math.max(0, ...Object.values(records).flat().map((item) => item.id || 0));
     records[activeDatabase.value].push({
       id: maxId + 1,
-      ...form.value,
+      ...payload,
     });
   }
   resetForm();
+}
+
+function normalizePayload() {
+  const payload = { ...form.value };
+  if (activeDatabase.value === 'products') {
+    const tirage = Number(payload.tirage) || 0;
+    payload.discount = autoDiscountForTirage(tirage);
+    const unitPrice = Number(payload.unit_price) || 0;
+    payload.total_price = Math.round(tirage * unitPrice * (1 - payload.discount / 100));
+  }
+  return payload;
+}
+
+function autoDiscountForTirage(tirage) {
+  if (tirage >= 1000) return 15;
+  if (tirage >= 500) return 10;
+  if (tirage >= 100) return 5;
+  return 0;
+}
+
+function refreshProductTotals() {
+  const tirage = Number(form.value.tirage) || 0;
+  const unitPrice = Number(form.value.unit_price) || 0;
+  form.value.discount = autoDiscountForTirage(tirage);
+  form.value.total_price = Math.round(tirage * unitPrice * (1 - Number(form.value.discount) / 100));
+}
+
+watch(
+  () => [form.value.tirage, form.value.unit_price],
+  () => {
+    if (activeDatabase.value === 'products') {
+      refreshProductTotals();
+    }
+  }
+);
+
+function formatValue(item, column) {
+  const value = item[column.key];
+  if (value === undefined || value === '') return '—';
+  if (column.type === 'currency') {
+    const numberValue = Number(value) || 0;
+    return new Intl.NumberFormat('ru-RU', { style: 'currency', currency: 'RUB', maximumFractionDigits: 0 }).format(numberValue);
+  }
+  if (column.type === 'number') {
+    return new Intl.NumberFormat('ru-RU').format(Number(value) || 0);
+  }
+  return value;
 }
 </script>
 
