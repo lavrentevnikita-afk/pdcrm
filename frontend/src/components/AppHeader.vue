@@ -36,9 +36,28 @@
           @click="toggleNotifications"
         >
           🔔
+          <span v-if="unreadCount" class="badge">{{ unreadCount }}</span>
         </button>
         <div v-if="showNotifications" class="notifications-dropdown">
-          <div class="notifications-empty">Нет уведомлений</div>
+          <div v-if="!notifications.length" class="notifications-empty">
+            Нет уведомлений
+          </div>
+          <div v-else class="notifications-list">
+            <div
+              v-for="item in notifications"
+              :key="item.id"
+              class="notification"
+              :class="{ read: item.is_read }"
+            >
+              <div class="title">{{ item.title }}</div>
+              <div class="message">{{ item.message }}</div>
+              <div class="meta">{{ formatDate(item.created_at) }}</div>
+              <button v-if="!item.is_read" type="button" @click="markRead(item.id)">
+                Прочитано
+              </button>
+            </div>
+            <button class="mark-all" type="button" @click="markAll">Отметить все прочитанными</button>
+          </div>
         </div>
       </div>
 
@@ -53,6 +72,7 @@
 <script setup>
 import { computed, ref, onMounted } from 'vue';
 import { useRoute } from 'vue-router';
+import axios from 'axios';
 import { useAuthStore } from '../store/auth';
 
 const route = useRoute();
@@ -60,6 +80,7 @@ const auth = useAuthStore();
 
 const theme = ref('light');
 const showNotifications = ref(false);
+const notifications = ref([]);
 
 const motivationPhrases = [
   'Хороших заказов и спокойного дня 👌',
@@ -111,6 +132,29 @@ function toggleNotifications() {
   showNotifications.value = !showNotifications.value;
 }
 
+async function loadNotifications() {
+  const { data } = await axios.get('/api/notifications');
+  notifications.value = data.notifications;
+}
+
+const unreadCount = computed(
+  () => notifications.value.filter((n) => !n.is_read).length
+);
+
+function formatDate(value) {
+  return new Date(value).toLocaleString();
+}
+
+async function markRead(id) {
+  const { data } = await axios.post('/api/notifications/mark-read', { id });
+  notifications.value = data.notifications;
+}
+
+async function markAll() {
+  const { data } = await axios.post('/api/notifications/mark-read');
+  notifications.value = data.notifications;
+}
+
 onMounted(() => {
   const saved = localStorage.getItem('pdcrm_theme') || 'light';
   applyTheme(saved);
@@ -119,5 +163,7 @@ onMounted(() => {
     (Number(localStorage.getItem('pdcrm_motivation_idx') ?? '0') + 1) %
     motivationPhrases.length;
   localStorage.setItem('pdcrm_motivation_idx', String(nextIdx));
+
+  loadNotifications();
 });
 </script>

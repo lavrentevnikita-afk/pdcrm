@@ -401,48 +401,48 @@
 
 - #### 7.1. Склад и закупка
 
-  - [ ] Миграции `materials`, `warehouse_items`, `warehouse_movements`.
-  - [ ] Endpoint’ы склада:
-    - [ ] `GET /api/warehouse/items`;
-    - [ ] `POST /api/warehouse/items`;
-    - [ ] `POST /api/warehouse/movements`.
-  - [ ] Миграции и API для `purchase_requests`.
-  - [ ] `WarehouseView`:
-    - [ ] таблица остатков;
-    - [ ] кнопка “Добавить позицию”;
-    - [ ] подсветка низких остатков;
-    - [ ] вкладка/панель “Закупка” с заявками.
+  - [x] Миграции `materials`, `warehouse_items`, `warehouse_movements`.
+  - [x] Endpoint’ы склада:
+    - [x] `GET /api/warehouse/items`;
+    - [x] `POST /api/warehouse/items`;
+    - [x] `POST /api/warehouse/movements`.
+  - [x] Миграции и API для `purchase_requests`.
+  - [x] `WarehouseView`:
+    - [x] таблица остатков;
+    - [x] кнопка “Добавить позицию”;
+    - [x] подсветка низких остатков;
+    - [x] вкладка/панель “Закупка” с заявками.
 
 - #### 7.2. Персонал
 
-  - [ ] Миграции `staff`, (опционально `staff_schedule`, `staff_attendance`).
-  - [ ] API:
-    - [ ] `GET /api/staff`;
-    - [ ] базовые CRUD-операции.
-  - [ ] `StaffView`:
-    - [ ] таблица сотрудников (имя, роль, отдел);
-    - [ ] карточка сотрудника (контакт, роль, базовая статистика).
+  - [x] Миграции `staff`, (опционально `staff_schedule`, `staff_attendance`).
+  - [x] API:
+    - [x] `GET /api/staff`;
+    - [x] базовые CRUD-операции.
+  - [x] `StaffView`:
+    - [x] таблица сотрудников (имя, роль, отдел);
+    - [x] карточка сотрудника (контакт, роль, базовая статистика).
 
 - #### 7.3. Аналитика
 
-  - [ ] API `GET /api/analytics/revenue`, `.../top-products`, `.../top-clients`.
-  - [ ] `AnalyticsView`:
-    - [ ] график выручки по дням/месяцам;
-    - [ ] таблицы топ-клиентов и топ-продуктов.
+  - [x] API `GET /api/analytics/revenue`, `.../top-products`, `.../top-clients`.
+  - [x] `AnalyticsView`:
+    - [x] график выручки по дням/месяцам;
+    - [x] таблицы топ-клиентов и топ-продуктов.
 
 - #### 7.4. Права и уведомления
 
-  - [ ] Миграция `user_permissions`.
-  - [ ] API для прав:
-    - [ ] `GET /api/permissions/users`;
-    - [ ] `POST /api/permissions/:userId`.
-  - [ ] `PermissionsView`:
-    - [ ] таблица пользователей и чекбоксы действий.
-  - [ ] Миграция `notifications`.
-  - [ ] API уведомлений:
-    - [ ] `GET /api/notifications`;
-    - [ ] `POST /api/notifications/mark-read`.
-  - [ ] Подключить иконку уведомлений в хедере к реальным данным.
+  - [x] Миграция `user_permissions`.
+  - [x] API для прав:
+    - [x] `GET /api/permissions/users`;
+    - [x] `POST /api/permissions/:userId`.
+  - [x] `PermissionsView`:
+    - [x] таблица пользователей и чекбоксы действий.
+  - [x] Миграция `notifications`.
+  - [x] API уведомлений:
+    - [x] `GET /api/notifications`;
+    - [x] `POST /api/notifications/mark-read`.
+  - [x] Подключить иконку уведомлений в хедере к реальным данным.
 
 ---
 
