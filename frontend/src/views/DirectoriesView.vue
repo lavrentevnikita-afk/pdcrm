@@ -416,7 +416,35 @@ const fieldOptions = (field) => {
 
 async function loadDatabase(key) {
   const { data } = await axios.get(`/api/directories/${key}`);
-  records[key] = data.records || [];
+
+  const config = databaseConfigs[key];
+  const columnKeys = config?.columns?.map((c) => c.key) || [];
+  const fieldKeys = config?.fields?.map((f) => f.key) || [];
+  const knownKeys = new Set(['id', ...columnKeys, ...fieldKeys]);
+
+  const toCamel = (value) =>
+    value.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
+  const toSnake = (value) =>
+    value.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`);
+
+  records[key] = (data.records || []).map((record) => {
+    const normalized = { ...record };
+
+    // Align backend keys (snake_case / camelCase) to the keys that the UI renders
+    knownKeys.forEach((k) => {
+      if (normalized[k] !== undefined) return;
+      const camel = toCamel(k);
+      const snake = toSnake(k);
+      normalized[k] =
+        record?.[camel] !== undefined
+          ? record[camel]
+          : record?.[snake] !== undefined
+            ? record[snake]
+            : record?.[k];
+    });
+
+    return normalized;
+  });
 
   if (key === 'products') {
     categoryOptions.value = (data.meta?.categories || []).map((c) => ({
