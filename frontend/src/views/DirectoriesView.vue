@@ -52,7 +52,7 @@
             <input
               v-model="filters[activeDatabase].search"
               type="text"
-              placeholder="Введите название или комментарий"
+              placeholder="Введите текст для поиска"
             />
           </label>
           <label v-if="currentConfig.filterKey" class="filter-field">
@@ -61,10 +61,10 @@
               <option value="">Все</option>
               <option
                 v-for="option in availableFilters"
-                :key="option"
-                :value="option"
+                :key="option.value || option"
+                :value="option.value || option"
               >
-                {{ option }}
+                {{ option.label || option }}
               </option>
             </select>
           </label>
@@ -86,7 +86,7 @@
             class="table-row"
           >
             <div v-for="column in currentConfig.columns" :key="column.key">
-              {{ item[column.key] || '—' }}
+              {{ item[column.key] ?? '—' }}
             </div>
             <div class="actions-col actions-col-body">
               <button class="btn" type="button" @click="startEdit(item)">Редактировать</button>
@@ -111,9 +111,11 @@
           >
             {{ field.label }}
             <input
-              v-if="field.type === 'text'"
+              v-if="field.type === 'text' || field.type === 'number' || field.type === 'datetime-local'"
               v-model="form[field.key]"
-              :type="field.inputType || 'text'"
+              :type="field.type"
+              :step="field.step"
+              :min="field.min"
               :placeholder="field.placeholder"
               :required="field.required"
             />
@@ -123,8 +125,12 @@
               :required="field.required"
             >
               <option value="" disabled>Выберите</option>
-              <option v-for="option in fieldOptions(field)" :key="option" :value="option">
-                {{ option }}
+              <option
+                v-for="option in fieldOptions(field)"
+                :key="option.value ?? option"
+                :value="option.value ?? option"
+              >
+                {{ option.label ?? option }}
               </option>
             </select>
           </label>
@@ -147,59 +153,167 @@ import axios from 'axios';
 
 const databases = [
   {
+    key: 'users',
+    title: 'Пользователи',
+    description: 'Сотрудники, их роли и доступы.',
+    tags: ['Доступы', 'Роли'],
+  },
+  {
+    key: 'product-categories',
+    title: 'Категории продукции',
+    description: 'Группы и разрезы для каталога продукции.',
+    tags: ['Категории', 'Группы'],
+  },
+  {
     key: 'products',
     title: 'Продукция',
-    description: 'Каталог продукции разбит по категориям и типам работ.',
+    description: 'Каталог продукции с ценами для калькулятора и SKU.',
     tags: ['Категории', 'SKU', 'Тиражи'],
+  },
+  {
+    key: 'cash-shifts',
+    title: 'Кассовые смены',
+    description: 'История смен с суммами и ответственных.',
+    tags: ['Касса', 'История'],
   },
   {
     key: 'clients',
     title: 'Клиенты',
-    description: 'Сегменты клиентов, контактные данные и примечания.',
+    description: 'Клиентская база с контактами.',
     tags: ['B2B', 'B2C'],
   },
   {
-    key: 'materials',
-    title: 'Материалы',
-    description: 'Бумага, расходники и материалы для типографии.',
-    tags: ['Склад', 'Закупки'],
-  },
-  {
-    key: 'suppliers',
-    title: 'Поставщики',
-    description: 'Базы поставщиков с контактами и статусами.',
-    tags: ['Контракты', 'Согласования'],
+    key: 'organizations',
+    title: 'Организации',
+    description: 'Юрлица для заказов и счетов.',
+    tags: ['Юрлица', 'B2B'],
   },
 ];
 
 const records = reactive({
+  users: [],
+  'product-categories': [],
   products: [],
+  'cash-shifts': [],
   clients: [],
-  materials: [],
-  suppliers: [],
+  organizations: [],
 });
 
 const categoryOptions = ref([]);
+const userOptions = ref([]);
 
 const databaseConfigs = {
+  users: {
+    title: 'Пользователи',
+    description: 'Сотрудники, их роли и контактные данные.',
+    columns: [
+      { key: 'name', label: 'Имя' },
+      { key: 'role', label: 'Роль' },
+      { key: 'department', label: 'Отдел' },
+      { key: 'phone', label: 'Телефон' },
+      { key: 'email', label: 'E-mail' },
+      { key: 'is_active', label: 'Активен' },
+    ],
+    fields: [
+      { key: 'name', label: 'Имя', type: 'text', required: true },
+      {
+        key: 'role',
+        label: 'Роль',
+        type: 'select',
+        options: [
+          { value: 'admin', label: 'Администратор' },
+          { value: 'director', label: 'Директор' },
+          { value: 'manager', label: 'Менеджер' },
+          { value: 'production', label: 'Производство' },
+          { value: 'designer', label: 'Дизайнер' },
+        ],
+        required: true,
+      },
+      { key: 'department', label: 'Отдел', type: 'text' },
+      { key: 'phone', label: 'Телефон', type: 'text' },
+      { key: 'email', label: 'E-mail', type: 'text' },
+      { key: 'workload', label: 'Нагрузка', type: 'number', step: '1', min: '0' },
+      { key: 'access_code', label: 'Код доступа (для входа)', type: 'text' },
+      {
+        key: 'is_active',
+        label: 'Статус',
+        type: 'select',
+        options: [
+          { value: 1, label: 'Активен' },
+          { value: 0, label: 'Отключен' },
+        ],
+      },
+    ],
+    searchable: ['name', 'role', 'department', 'email', 'phone'],
+  },
+  'product-categories': {
+    title: 'Категории продукции',
+    description: 'Группы для номенклатуры, используются в каталоге и калькуляторе.',
+    columns: [
+      { key: 'name', label: 'Название' },
+      { key: 'slug', label: 'Слаг' },
+    ],
+    fields: [
+      { key: 'name', label: 'Название', type: 'text', required: true },
+      { key: 'slug', label: 'Слаг', type: 'text', placeholder: 'Например, banners' },
+    ],
+    searchable: ['name', 'slug'],
+  },
   products: {
     title: 'Каталог продукции',
-    description: 'Добавляйте новые позиции, редактируйте SKU и категории.',
+    description: 'Добавляйте позиции, SKU, тиражи и цены для калькулятора.',
     columns: [
       { key: 'name', label: 'Название' },
       { key: 'category', label: 'Категория' },
       { key: 'sku', label: 'SKU' },
+      { key: 'unit', label: 'Ед.' },
+      { key: 'base_price', label: 'Базовая цена' },
+      { key: 'default_run', label: 'Тираж' },
       { key: 'note', label: 'Комментарий' },
     ],
     fields: [
-      { key: 'name', label: 'Название', type: 'text', placeholder: 'Например, «Каталог А4»', required: true },
-      { key: 'category', label: 'Категория', type: 'select', options: categoryOptions, required: true },
-      { key: 'sku', label: 'SKU', type: 'text', placeholder: 'PR-001', required: true },
-      { key: 'note', label: 'Комментарий', type: 'text', placeholder: 'Материал, тираж или особенности', fullWidth: true },
+      { key: 'name', label: 'Название', type: 'text', required: true },
+      {
+        key: 'category_id',
+        label: 'Категория',
+        type: 'select',
+        options: categoryOptions,
+        required: true,
+      },
+      { key: 'sku', label: 'SKU', type: 'text', placeholder: 'PR-001', required: false },
+      { key: 'unit', label: 'Ед. измерения', type: 'text', placeholder: 'шт.' },
+      { key: 'base_price', label: 'Базовая цена', type: 'number', step: '0.01', required: true },
+      { key: 'default_run', label: 'Тираж (по умолчанию)', type: 'number', min: '1', step: '1' },
+      { key: 'note', label: 'Комментарий', type: 'text', placeholder: 'Материал, особенности', fullWidth: true },
     ],
     filterKey: 'category',
     filterLabel: 'Категория',
     searchable: ['name', 'note', 'sku'],
+  },
+  'cash-shifts': {
+    title: 'Кассовые смены',
+    description: 'История смен с ответственными и суммами.',
+    columns: [
+      { key: 'opened_at', label: 'Открыта' },
+      { key: 'closed_at', label: 'Закрыта' },
+      { key: 'opened_by_name', label: 'Открыл' },
+      { key: 'closed_by_name', label: 'Закрыл' },
+      { key: 'total_amount', label: 'Итого' },
+    ],
+    fields: [
+      { key: 'opened_at', label: 'Открыта', type: 'datetime-local', required: true },
+      { key: 'closed_at', label: 'Закрыта', type: 'datetime-local' },
+      {
+        key: 'opened_by',
+        label: 'Открыл',
+        type: 'select',
+        options: userOptions,
+        required: true,
+      },
+      { key: 'closed_by', label: 'Закрыл', type: 'select', options: userOptions },
+      { key: 'total_amount', label: 'Сумма', type: 'number', step: '0.01', required: true },
+    ],
+    searchable: ['opened_by_name', 'closed_by_name'],
   },
   clients: {
     title: 'База клиентов',
@@ -208,55 +322,40 @@ const databaseConfigs = {
       { key: 'name', label: 'Клиент' },
       { key: 'segment', label: 'Сегмент' },
       { key: 'contact', label: 'Контакты' },
+      { key: 'phone', label: 'Телефон' },
       { key: 'note', label: 'Комментарий' },
     ],
     fields: [
       { key: 'name', label: 'Название клиента', type: 'text', required: true },
       { key: 'segment', label: 'Сегмент', type: 'select', options: ['B2B', 'B2C', 'Госзаказ'], required: true },
-      { key: 'contact', label: 'Контакты', type: 'text', placeholder: 'email или телефон' },
-      { key: 'note', label: 'Комментарий', type: 'text', placeholder: 'Ответственные, договор, скидка', fullWidth: true },
+      { key: 'contact', label: 'Контактное лицо', type: 'text', placeholder: 'ФИО' },
+      { key: 'phone', label: 'Телефон', type: 'text', placeholder: '+7…' },
+      { key: 'email', label: 'Email', type: 'text', placeholder: 'client@example.com' },
+      { key: 'note', label: 'Комментарий', type: 'text', placeholder: 'Договор, скидка', fullWidth: true },
     ],
     filterKey: 'segment',
     filterLabel: 'Сегмент',
-    searchable: ['name', 'contact', 'note'],
+    searchable: ['name', 'contact', 'note', 'phone'],
   },
-  materials: {
-    title: 'Материалы и расходники',
-    description: 'Управляйте типами материалов, единицами и статусом использования.',
+  organizations: {
+    title: 'Организации',
+    description: 'Юридические лица и реквизиты для заказов.',
     columns: [
-      { key: 'name', label: 'Материал' },
-      { key: 'type', label: 'Тип' },
-      { key: 'unit', label: 'Ед.' },
-      { key: 'note', label: 'Комментарий' },
+      { key: 'name', label: 'Организация' },
+      { key: 'tax_id', label: 'ИНН' },
+      { key: 'contact', label: 'Контакт' },
+      { key: 'phone', label: 'Телефон' },
+      { key: 'email', label: 'Email' },
     ],
     fields: [
       { key: 'name', label: 'Название', type: 'text', required: true },
-      { key: 'type', label: 'Тип', type: 'select', options: ['Бумага', 'Пленка', 'Баннер', 'Краска', 'Другое'], required: true },
-      { key: 'unit', label: 'Единица измерения', type: 'text', placeholder: 'лист, м², рулон' },
-      { key: 'note', label: 'Комментарий', type: 'text', placeholder: 'Формат, плотность, цвет', fullWidth: true },
+      { key: 'tax_id', label: 'ИНН', type: 'text' },
+      { key: 'contact', label: 'Контактное лицо', type: 'text' },
+      { key: 'phone', label: 'Телефон', type: 'text' },
+      { key: 'email', label: 'Email', type: 'text' },
+      { key: 'note', label: 'Комментарий', type: 'text', fullWidth: true },
     ],
-    filterKey: 'type',
-    filterLabel: 'Тип материала',
-    searchable: ['name', 'note', 'type'],
-  },
-  suppliers: {
-    title: 'Поставщики',
-    description: 'Список поставщиков, статусы сотрудничества и контакты.',
-    columns: [
-      { key: 'name', label: 'Поставщик' },
-      { key: 'status', label: 'Статус' },
-      { key: 'contact', label: 'Контакты' },
-      { key: 'note', label: 'Комментарий' },
-    ],
-    fields: [
-      { key: 'name', label: 'Название', type: 'text', required: true },
-      { key: 'status', label: 'Статус', type: 'select', options: ['Активный', 'На проверке', 'Остановлен'], required: true },
-      { key: 'contact', label: 'Контакты', type: 'text', placeholder: 'E-mail, телефон или менеджер' },
-      { key: 'note', label: 'Комментарий', type: 'text', placeholder: 'Условия оплаты, контактное лицо', fullWidth: true },
-    ],
-    filterKey: 'status',
-    filterLabel: 'Статус',
-    searchable: ['name', 'note', 'contact'],
+    searchable: ['name', 'contact', 'tax_id'],
   },
 };
 
@@ -276,12 +375,16 @@ const availableFilters = computed(() => {
   if (!activeDatabase.value) return [];
   const filterKey = currentConfig.value.filterKey;
   if (!filterKey) return [];
-  const options = new Set(
-    (records[activeDatabase.value] || [])
-      .map((item) => item[filterKey])
-      .filter(Boolean)
-  );
-  return Array.from(options);
+  const options = new Map();
+  (records[activeDatabase.value] || [])
+    .map((item) => item[filterKey])
+    .filter(Boolean)
+    .forEach((value) => {
+      const label = typeof value === 'object' ? value.label || value.name : value;
+      const val = typeof value === 'object' ? value.value || value.id : value;
+      options.set(val, label);
+    });
+  return Array.from(options.entries()).map(([value, label]) => ({ value, label }));
 });
 
 const filteredRecords = computed(() => {
@@ -291,7 +394,7 @@ const filteredRecords = computed(() => {
   return (records[activeDatabase.value] || [])
     .filter((item) => {
       if (filter && config.filterKey) {
-        return (item[config.filterKey] || '').toLowerCase() === filter.toLowerCase();
+        return String(item[config.filterKey] || '').toLowerCase() === String(filter).toLowerCase();
       }
       return true;
     })
@@ -307,6 +410,7 @@ const filteredRecords = computed(() => {
 const fieldOptions = (field) => {
   if (Array.isArray(field.options)) return field.options;
   if (field.options?.value) return field.options.value;
+  if (Array.isArray(field.options?.value)) return field.options.value;
   return field.options || [];
 };
 
@@ -315,7 +419,21 @@ async function loadDatabase(key) {
   records[key] = data.records || [];
 
   if (key === 'products') {
-    categoryOptions.value = data.meta?.categories || [];
+    categoryOptions.value = (data.meta?.categories || []).map((c) => ({
+      value: c.id,
+      label: c.name,
+    }));
+  }
+
+  if (key === 'cash-shifts') {
+    userOptions.value = (data.meta?.users || []).map((u) => ({
+      value: u.id,
+      label: u.name,
+    }));
+  }
+
+  if (key === 'users' && data.records) {
+    userOptions.value = data.records.map((u) => ({ value: u.id, label: u.name }));
   }
 }
 
@@ -343,7 +461,7 @@ function startCreate(key) {
   editingId.value = null;
   const fields = databaseConfigs[activeDatabase.value].fields;
   form.value = fields.reduce((acc, field) => {
-    acc[field.key] = '';
+    acc[field.key] = field.type === 'select' ? '' : '';
     return acc;
   }, {});
 }
@@ -400,15 +518,15 @@ onMounted(loadAll);
   display: flex;
   flex-direction: column;
   gap: 12px;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15);
 }
 
 .card-title {
+  font-size: 16px;
   font-weight: 700;
-  font-size: 18px;
 }
 
 .card-subtitle {
+  margin-top: 4px;
   color: #9ca3af;
   font-size: 13px;
 }
@@ -417,19 +535,17 @@ onMounted(loadAll);
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  flex-wrap: wrap;
 }
 
 .meta-count {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
+  align-items: baseline;
+  gap: 4px;
 }
 
 .count-number {
-  font-size: 24px;
-  font-weight: 800;
+  font-size: 20px;
+  font-weight: 700;
 }
 
 .count-label {
@@ -439,19 +555,16 @@ onMounted(loadAll);
 
 .meta-tags {
   display: flex;
-  gap: 8px;
+  gap: 6px;
   flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .badge {
-  display: inline-flex;
-  align-items: center;
-  padding: 4px 10px;
-  border-radius: 999px;
+  padding: 2px 8px;
   background: #1f2937;
-  color: #e5e7eb;
+  border-radius: 999px;
   font-size: 12px;
-  border: 1px solid #273449;
 }
 
 .card-actions {
@@ -461,135 +574,102 @@ onMounted(loadAll);
 
 .btn {
   padding: 8px 12px;
-  border-radius: 10px;
-  border: 1px solid #1f2937;
-  background: #0b1221;
+  border: 1px solid #374151;
+  border-radius: 8px;
+  background: #111827;
   color: #e5e7eb;
   cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.btn:hover {
-  background: #111827;
 }
 
 .btn-primary {
-  background: linear-gradient(135deg, #2563eb, #7c3aed);
-  border: none;
+  background: #2563eb;
+  border-color: #2563eb;
 }
 
 .btn-danger {
-  background: rgba(239, 68, 68, 0.14);
-  border: 1px solid rgba(239, 68, 68, 0.4);
-  color: #fecdd3;
+  background: #ef4444;
+  border-color: #ef4444;
+  color: #fff;
 }
 
 .modal-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.6);
+  background: rgba(15, 23, 42, 0.6);
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: center;
-  padding: 32px 16px;
-  overflow: auto;
+  padding: 16px;
   z-index: 30;
 }
 
 .modal {
-  background: #0f172a;
+  background: #0b1221;
   border: 1px solid #1f2937;
-  border-radius: 16px;
-  padding: 20px;
-  width: min(1200px, 100%);
+  border-radius: 12px;
+  padding: 16px;
+  max-width: 1000px;
+  width: 100%;
+  max-height: 90vh;
+  overflow: auto;
   display: flex;
   flex-direction: column;
   gap: 16px;
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.35);
 }
 
 .modal-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-}
-
-.modal-title {
-  font-size: 20px;
-  font-weight: 800;
-}
-
-.modal-subtitle {
-  color: #9ca3af;
-  font-size: 13px;
 }
 
 .modal-toolbar {
-  display: grid;
-  grid-template-columns: 1fr 240px 140px;
+  display: flex;
   gap: 12px;
-  align-items: end;
+  flex-wrap: wrap;
 }
 
 .search-field,
 .filter-field {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  color: #e5e7eb;
-  font-size: 14px;
+  gap: 4px;
+  min-width: 240px;
 }
 
 .input-label {
-  font-size: 13px;
+  font-size: 12px;
   color: #9ca3af;
-}
-
-input,
-select {
-  background: #0b1221;
-  border: 1px solid #1f2937;
-  color: #e5e7eb;
-  border-radius: 10px;
-  padding: 10px 12px;
 }
 
 .table {
   border: 1px solid #1f2937;
   border-radius: 12px;
-  overflow: hidden;
 }
 
 .table-head,
 .table-row {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)) 150px;
-  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)) 160px;
+  gap: 8px;
   padding: 12px;
+  align-items: center;
 }
 
 .table-head {
-  background: #111827;
-  color: #9ca3af;
-  font-size: 12px;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-}
-
-.table-row:nth-child(odd) {
-  background: #0b1221;
+  background: #0f172a;
+  border-bottom: 1px solid #1f2937;
+  font-weight: 600;
 }
 
 .table-row:nth-child(even) {
-  background: #0d1528;
+  background: #0f172a;
 }
 
 .actions-col {
   display: flex;
-  gap: 6px;
+  gap: 8px;
   justify-content: flex-end;
-  flex-wrap: wrap;
 }
 
 .actions-col-body {
@@ -597,57 +677,48 @@ select {
 }
 
 .empty-state {
-  padding: 14px 16px;
+  padding: 12px;
   text-align: center;
   color: #9ca3af;
-  border-top: 1px solid #1f2937;
 }
 
 .form-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
   gap: 12px;
-  padding-top: 8px;
-  border-top: 1px solid #1f2937;
+  border: 1px solid #1f2937;
+  border-radius: 12px;
+  padding: 12px;
 }
 
 .form-grid-title {
   grid-column: 1 / -1;
   font-weight: 700;
-  font-size: 16px;
 }
 
 label {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  font-size: 14px;
+  gap: 4px;
+  font-size: 13px;
+}
+
+input,
+select {
+  background: #0f172a;
+  border: 1px solid #1f2937;
+  border-radius: 8px;
+  padding: 8px;
   color: #e5e7eb;
 }
 
 .modal-actions {
   display: flex;
-  justify-content: flex-end;
   gap: 8px;
-  margin-top: 4px;
+  justify-content: flex-end;
 }
 
 .span-2 {
   grid-column: span 2;
-}
-
-@media (max-width: 900px) {
-  .modal-toolbar {
-    grid-template-columns: 1fr;
-  }
-
-  .table-head,
-  .table-row {
-    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-  }
-
-  .actions-col {
-    justify-content: flex-start;
-  }
 }
 </style>

@@ -61,6 +61,32 @@
               </label>
             </div>
 
+            <div class="drawer-two-cols">
+              <label class="drawer-field">
+                <span class="drawer-label">
+                  Выбрать клиента из базы
+                </span>
+                <select
+                  v-if="form.clientType === 'retail'"
+                  v-model.number="form.clientId"
+                >
+                  <option :value="null">Новый клиент</option>
+                  <option v-for="c in clients" :key="c.id" :value="c.id">
+                    {{ c.name }}
+                  </option>
+                </select>
+                <select
+                  v-else
+                  v-model.number="form.organizationId"
+                >
+                  <option :value="null">Новая организация</option>
+                  <option v-for="org in organizations" :key="org.id" :value="org.id">
+                    {{ org.name }}
+                  </option>
+                </select>
+              </label>
+            </div>
+
             <label class="drawer-field">
               <span class="drawer-label">
                 Название заказа
@@ -253,6 +279,8 @@ const form = reactive({
   clientType: 'retail',
   clientName: '',
   clientPhone: '',
+  clientId: null,
+  organizationId: null,
   title: '',
   description: '',
   deadlineDate: '',
@@ -264,6 +292,8 @@ const form = reactive({
 
 const items = ref([]);
 const productCategories = ref([]);
+const clients = ref([]);
+const organizations = ref([]);
 
 const productItems = computed(() =>
   items.value.filter((i) => i.type === 'product')
@@ -283,6 +313,41 @@ const discountGuard = {
   fromPercent: false,
   fromValue: false,
 };
+
+watch(
+  () => form.clientType,
+  (val) => {
+    if (val === 'retail') {
+      form.organizationId = null;
+    } else {
+      form.clientId = null;
+    }
+  }
+);
+
+watch(
+  () => form.clientId,
+  (id) => {
+    if (!id) return;
+    const found = clients.value.find((c) => c.id === Number(id));
+    if (found) {
+      form.clientName = found.name;
+      form.clientPhone = found.phone || found.contact || '';
+    }
+  }
+);
+
+watch(
+  () => form.organizationId,
+  (id) => {
+    if (!id) return;
+    const found = organizations.value.find((o) => o.id === Number(id));
+    if (found) {
+      form.clientName = found.name;
+      form.clientPhone = found.phone || '';
+    }
+  }
+);
 
 watch(
   () => form.orderDiscountPercent,
@@ -336,6 +401,7 @@ watch(
     if (val) {
       resetForm();
       loadCategories();
+      loadDirectoryData();
       if (!items.value.length) {
         addItem('product');
       }
@@ -347,6 +413,8 @@ function resetForm() {
   form.clientType = 'retail';
   form.clientName = '';
   form.clientPhone = '';
+  form.clientId = null;
+  form.organizationId = null;
   form.title = '';
   form.description = '';
   form.deadlineDate = '';
@@ -394,6 +462,20 @@ async function loadCategories() {
   try {
     const { data } = await api.get('/product-categories');
     productCategories.value = data || [];
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.error(e);
+  }
+}
+
+async function loadDirectoryData() {
+  try {
+    const [clientsResp, orgResp] = await Promise.all([
+      api.get('/directories/clients'),
+      api.get('/directories/organizations'),
+    ]);
+    clients.value = clientsResp.data?.records || [];
+    organizations.value = orgResp.data?.records || [];
   } catch (e) {
     // eslint-disable-next-line no-console
     console.error(e);
@@ -448,13 +530,31 @@ async function handleSubmit() {
       comment: item.comment || null,
     }));
 
+    const selectedOrg = organizations.value.find(
+      (o) => o.id === Number(form.organizationId)
+    );
+    const selectedClient = clients.value.find(
+      (c) => c.id === Number(form.clientId)
+    );
+
+    const finalClientName =
+      form.clientName ||
+      (form.clientType === 'org' ? selectedOrg?.name : selectedClient?.name) ||
+      '';
+
+    const finalClientPhone =
+      form.clientPhone ||
+      (form.clientType === 'org'
+        ? selectedOrg?.phone
+        : selectedClient?.phone || selectedClient?.contact) ||
+      '';
+
     const payload = {
-      title:
-        form.title ||
-        form.clientName ||
-        'Новый заказ',
-      client_name: form.clientName || null,
-      client_phone: form.clientPhone || null,
+      title: form.title || finalClientName || 'Новый заказ',
+      client_id: form.clientType === 'retail' ? form.clientId : null,
+      organization_id: form.clientType === 'org' ? form.organizationId : null,
+      client_name: finalClientName || null,
+      client_phone: finalClientPhone || null,
       deadline_at: deadlineAt,
       sum_total: totalToPay.value,
       is_hot: form.isHot,

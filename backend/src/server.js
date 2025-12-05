@@ -18,6 +18,27 @@ async function ensureSchemaPatches() {
       table.string('sku');
     });
   }
+
+  const hasDefaultRun = await knex.schema.hasColumn('products', 'default_run');
+  if (!hasDefaultRun) {
+    await knex.schema.table('products', (table) => {
+      table.integer('default_run').notNullable().defaultTo(1);
+    });
+  }
+
+  const clientsHasPhone = await knex.schema.hasColumn('clients', 'phone');
+  if (!clientsHasPhone) {
+    await knex.schema.table('clients', (table) => {
+      table.string('phone');
+    });
+  }
+
+  const clientsHasEmail = await knex.schema.hasColumn('clients', 'email');
+  if (!clientsHasEmail) {
+    await knex.schema.table('clients', (table) => {
+      table.string('email');
+    });
+  }
 }
 
 const { calculateOrderItemPrice, recalculateOrderTotals } = require('./orders.service');
@@ -86,7 +107,11 @@ async function mapDirectoryRecord(type, row) {
       id: row.id,
       name: row.name,
       category: row.category_name || null,
+      category_id: row.category_id || null,
       sku: row.sku || null,
+      unit: row.unit,
+      base_price: row.base_price != null ? Number(row.base_price) : 0,
+      default_run: row.default_run != null ? Number(row.default_run) : 1,
       note: row.comment || null,
     };
   }
@@ -96,27 +121,56 @@ async function mapDirectoryRecord(type, row) {
       id: row.id,
       name: row.name,
       segment: row.segment || null,
-      contact: row.contact || null,
+      contact: row.contact || row.phone || null,
+      phone: row.phone || null,
+      email: row.email || null,
       note: row.note || null,
     };
   }
 
-  if (type === 'materials') {
+  if (type === 'product-categories') {
     return {
       id: row.id,
       name: row.name,
-      type: row.type || null,
-      unit: row.unit || null,
-      note: row.note || null,
+      slug: row.slug || null,
     };
   }
 
-  if (type === 'suppliers') {
+  if (type === 'users') {
     return {
       id: row.id,
       name: row.name,
-      status: row.status || null,
-      contact: row.contact || null,
+      role: row.role,
+      department: row.department || null,
+      phone: row.phone || null,
+      email: row.email || null,
+      workload: row.workload != null ? Number(row.workload) : 0,
+      is_active: !!row.is_active,
+    };
+  }
+
+  if (type === 'cash-shifts') {
+    return {
+      id: row.id,
+      opened_at: row.opened_at,
+      closed_at: row.closed_at,
+      opened_by: row.opened_by,
+      opened_by_name: row.opened_by_name || null,
+      closed_by: row.closed_by,
+      closed_by_name: row.closed_by_name || null,
+      total_amount:
+        row.total_amount != null ? Number(row.total_amount) : 0,
+    };
+  }
+
+  if (type === 'organizations') {
+    return {
+      id: row.id,
+      name: row.name,
+      tax_id: row.tax_id || null,
+      contact: row.contact_person || null,
+      phone: row.phone || null,
+      email: row.email || null,
       note: row.note || null,
     };
   }
@@ -129,10 +183,10 @@ async function listDirectory(type) {
     const rows = await knex('products as p')
       .leftJoin('product_categories as c', 'p.category_id', 'c.id')
       .select('p.*', 'c.name as category_name');
-    const categories = await knex('product_categories').select('name');
+    const categories = await knex('product_categories').select('id', 'name');
     return {
       records: rows.map((row) => mapDirectoryRecord(type, row)),
-      meta: { categories: categories.map((c) => c.name) },
+      meta: { categories },
     };
   }
 
@@ -141,26 +195,57 @@ async function listDirectory(type) {
     return { records: rows.map((row) => mapDirectoryRecord(type, row)) };
   }
 
-  if (type === 'materials') {
-    const rows = await knex('materials');
+  if (type === 'product-categories') {
+    const rows = await knex('product_categories').orderBy('sort_order', 'asc');
     return { records: rows.map((row) => mapDirectoryRecord(type, row)) };
   }
 
-  if (type === 'suppliers') {
-    const rows = await knex('suppliers');
+  if (type === 'users') {
+    const rows = await knex('users');
+    return { records: rows.map((row) => mapDirectoryRecord(type, row)) };
+  }
+
+  if (type === 'cash-shifts') {
+    const rows = await knex('cash_shifts as cs')
+      .leftJoin('users as o', 'cs.opened_by', 'o.id')
+      .leftJoin('users as c', 'cs.closed_by', 'c.id')
+      .select(
+        'cs.*',
+        'o.name as opened_by_name',
+        'c.name as closed_by_name'
+      )
+      .orderBy('opened_at', 'desc');
+
+    const users = await knex('users').select('id', 'name');
+
+    return {
+      records: rows.map((row) => mapDirectoryRecord(type, row)),
+      meta: { users },
+    };
+  }
+
+  if (type === 'organizations') {
+    const rows = await knex('organizations').orderBy('name', 'asc');
     return { records: rows.map((row) => mapDirectoryRecord(type, row)) };
   }
 
   throw new Error('Unknown directory');
 }
 
-async function prepareDirectoryPayload(type, payload) {
+async function prepareDirectoryPayload(type, payload, user = {}) {
   if (type === 'products') {
-    const categoryId = await ensureCategoryId(payload.category);
+    let categoryId = payload.category_id || payload.category || null;
+    if (!categoryId && payload.category) {
+      categoryId = await ensureCategoryId(payload.category);
+    }
     return {
       name: payload.name,
       category_id: categoryId,
       sku: payload.sku || null,
+      unit: payload.unit || 'шт.',
+      base_price: payload.base_price != null ? Number(payload.base_price) : 0,
+      default_run:
+        payload.default_run != null ? Number(payload.default_run) : 1,
       comment: payload.note || null,
     };
   }
@@ -170,24 +255,61 @@ async function prepareDirectoryPayload(type, payload) {
       name: payload.name,
       segment: payload.segment || null,
       contact: payload.contact || null,
+      phone: payload.phone || null,
+      email: payload.email || null,
       note: payload.note || null,
     };
   }
 
-  if (type === 'materials') {
+  if (type === 'product-categories') {
     return {
       name: payload.name,
-      type: payload.type || null,
-      unit: payload.unit || null,
-      note: payload.note || null,
+      slug:
+        payload.slug || payload.name?.toLowerCase().replace(/\s+/g, '-') || null,
+      sort_order: payload.sort_order != null ? payload.sort_order : 0,
     };
   }
 
-  if (type === 'suppliers') {
+  if (type === 'users') {
+    const isActiveRaw = payload.is_active;
+    const prepared = {
+      name: payload.name,
+      role: payload.role || 'manager',
+      department: payload.department || null,
+      phone: payload.phone || null,
+      email: payload.email || null,
+      workload: payload.workload != null ? Number(payload.workload) : 0,
+      is_active:
+        isActiveRaw === false || isActiveRaw === 0 || isActiveRaw === '0'
+          ? 0
+          : 1,
+    };
+
+    if (payload.access_code) {
+      prepared.access_code_hash = await bcrypt.hash(payload.access_code, 10);
+    }
+
+    return prepared;
+  }
+
+  if (type === 'cash-shifts') {
+    return {
+      opened_at: payload.opened_at || new Date().toISOString(),
+      closed_at: payload.closed_at || null,
+      opened_by: payload.opened_by || user.id,
+      closed_by: payload.closed_by || null,
+      total_amount:
+        payload.total_amount != null ? Number(payload.total_amount) : 0,
+    };
+  }
+
+  if (type === 'organizations') {
     return {
       name: payload.name,
-      status: payload.status || null,
-      contact: payload.contact || null,
+      tax_id: payload.tax_id || null,
+      contact_person: payload.contact || null,
+      phone: payload.phone || null,
+      email: payload.email || null,
       note: payload.note || null,
     };
   }
@@ -198,8 +320,10 @@ async function prepareDirectoryPayload(type, payload) {
 function directoryTable(type) {
   if (type === 'products') return 'products';
   if (type === 'clients') return 'clients';
-  if (type === 'materials') return 'materials';
-  if (type === 'suppliers') return 'suppliers';
+  if (type === 'product-categories') return 'product_categories';
+  if (type === 'users') return 'users';
+  if (type === 'cash-shifts') return 'cash_shifts';
+  if (type === 'organizations') return 'organizations';
   throw new Error('Unknown directory');
 }
 
@@ -419,6 +543,8 @@ function mapOrderRow(row) {
     id: row.id,
     order_number: row.order_number,
     title: row.title,
+    client_id: row.client_id || null,
+    organization_id: row.organization_id || null,
     client_name: row.client_name || null,
     client_phone: row.client_phone || null,
     manager_id: row.manager_id || null,
@@ -547,6 +673,8 @@ app.post('/api/orders', authMiddleware, async (req, res, next) => {
   try {
     const {
       title,
+      client_id: clientId,
+      organization_id: organizationId,
       client_name: clientName,
       client_phone: clientPhone,
       status,
@@ -588,6 +716,8 @@ app.post('/api/orders', authMiddleware, async (req, res, next) => {
     const [insertedId] = await knex('orders').insert({
       order_number: orderNumber,
       title,
+      client_id: clientId || null,
+      organization_id: organizationId || null,
       client_name: clientName || null,
       client_phone: clientPhone || null,
       manager_id: req.user.id,
@@ -958,8 +1088,15 @@ app.post('/api/products', authMiddleware, async (req, res, next) => {
     const roleError = ensureCanManageCatalog(req, res);
     if (roleError) return roleError;
 
-    const { name, category_id: categoryId, base_price, unit, comment } =
-      req.body || {};
+    const {
+      name,
+      category_id: categoryId,
+      base_price,
+      unit,
+      comment,
+      sku,
+      default_run,
+    } = req.body || {};
 
     if (!name) {
       return res.status(400).json({ message: 'Название обязательно' });
@@ -971,6 +1108,8 @@ app.post('/api/products', authMiddleware, async (req, res, next) => {
         category_id: categoryId || null,
         base_price: base_price || 0,
         unit: unit || 'шт.',
+        default_run: default_run != null ? default_run : 1,
+        sku: sku || null,
         comment: comment || null,
         is_active: 1,
         created_at: new Date().toISOString(),
@@ -996,8 +1135,16 @@ app.put('/api/products/:id', authMiddleware, async (req, res, next) => {
     if (roleError) return roleError;
 
     const { id } = req.params;
-    const { name, category_id: categoryId, base_price, unit, comment, is_active } =
-      req.body || {};
+    const {
+      name,
+      category_id: categoryId,
+      base_price,
+      unit,
+      comment,
+      is_active,
+      sku,
+      default_run,
+    } = req.body || {};
 
     const existing = await knex('products')
       .where({ id: Number(id) })
@@ -1016,6 +1163,9 @@ app.put('/api/products/:id', authMiddleware, async (req, res, next) => {
         base_price:
           base_price !== undefined ? base_price : existing.base_price,
         unit: unit != null ? unit : existing.unit,
+        default_run:
+          default_run !== undefined ? default_run : existing.default_run,
+        sku: sku !== undefined ? sku : existing.sku,
         comment: comment !== undefined ? comment : existing.comment,
         is_active:
           is_active !== undefined ? (is_active ? 1 : 0) : existing.is_active,
@@ -1323,7 +1473,7 @@ app.post('/api/directories/:type', authMiddleware, async (req, res, next) => {
       return res.status(400).json({ message: 'Название обязательно' });
     }
 
-    const data = await prepareDirectoryPayload(type, payload);
+    const data = await prepareDirectoryPayload(type, payload, req.user || {});
     const table = directoryTable(type);
     const [id] = await knex(table).insert(data).returning('id');
     const createdId = id?.id || id;
@@ -1346,7 +1496,11 @@ app.put('/api/directories/:type/:id', authMiddleware, async (req, res, next) => 
       return res.status(404).json({ message: 'Запись не найдена' });
     }
 
-    const data = await prepareDirectoryPayload(type, { ...exists, ...payload });
+    const data = await prepareDirectoryPayload(
+      type,
+      { ...exists, ...payload },
+      req.user || {}
+    );
     await knex(table).where({ id }).update(data);
 
     const { records, meta } = await listDirectory(type);
@@ -1365,6 +1519,73 @@ app.delete('/api/directories/:type/:id', authMiddleware, async (req, res, next) 
     await knex(table).where({ id }).del();
     const { records, meta } = await listDirectory(type);
     res.json({ records, meta });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ===============================
+// Admin utilities
+// ===============================
+app.post('/api/admin/export-and-reset', authMiddleware, async (req, res, next) => {
+  try {
+    const roleError = ensureCanManageCatalog(req, res);
+    if (roleError) return roleError;
+
+    const backupTables = [
+      'users',
+      'user_permissions',
+      'product_categories',
+      'products',
+      'product_price_tiers',
+      'clients',
+      'organizations',
+      'orders',
+      'order_items',
+      'payments',
+      'cash_shifts',
+      'materials',
+      'suppliers',
+      'warehouse_items',
+      'warehouse_movements',
+      'purchase_requests',
+      'notifications',
+    ];
+
+    const backup = {};
+    for (const table of backupTables) {
+      backup[table] = await knex(table);
+    }
+
+    const clearOrder = [
+      'order_items',
+      'orders',
+      'payments',
+      'cash_shifts',
+      'product_price_tiers',
+      'products',
+      'product_categories',
+      'clients',
+      'organizations',
+      'materials',
+      'suppliers',
+      'warehouse_movements',
+      'warehouse_items',
+      'purchase_requests',
+      'notifications',
+    ];
+
+    await knex.transaction(async (trx) => {
+      for (const table of clearOrder) {
+        await trx(table).del();
+      }
+    });
+
+    res.json({
+      exported_at: new Date().toISOString(),
+      backup,
+      cleared_tables: clearOrder,
+    });
   } catch (err) {
     next(err);
   }
