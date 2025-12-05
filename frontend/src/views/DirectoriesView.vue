@@ -2,41 +2,36 @@
   <div class="directories-page">
     <div class="page-title">Справочники</div>
     <div class="page-subtitle">
-      Управление базами данных через удобные модальные окна с поиском, фильтрацией
-      и быстрым редактированием.
+      Управляйте списками через удобные таблицы и форму — без всплывающих окон и плейсхолдеров.
     </div>
 
     <div class="directories-grid">
-      <section
-        v-for="db in databases"
-        :key="db.key"
-        class="directory-card"
-      >
+      <section v-for="directory in directories" :key="directory.key" class="directory-card">
         <div>
-          <div class="card-title">{{ db.title }}</div>
-          <div class="card-subtitle">{{ db.description }}</div>
+          <div class="card-title">{{ directory.title }}</div>
+          <div class="card-subtitle">{{ directory.description }}</div>
         </div>
         <div class="card-meta">
           <div class="meta-count">
-            <span class="count-number">{{ (records[db.key] || []).length }}</span>
+            <span class="count-number">{{ (records[directory.key] || []).length }}</span>
             <span class="count-label">записей</span>
           </div>
           <div class="meta-tags">
-            <span v-for="tag in db.tags" :key="tag" class="badge">{{ tag }}</span>
+            <span v-for="tag in directory.tags" :key="tag" class="badge">{{ tag }}</span>
           </div>
         </div>
         <div class="card-actions">
-          <button class="btn" type="button" @click="openDatabase(db.key)">
-            Управлять
+          <button class="btn" type="button" @click="openDirectory(directory.key)">
+            Открыть
           </button>
-          <button class="btn btn-primary" type="button" @click="startCreate(db.key)">
+          <button class="btn btn-primary" type="button" @click="startCreate(directory.key)">
             Добавить
           </button>
         </div>
       </section>
     </div>
 
-    <div v-if="activeDatabase" class="modal-backdrop" @click.self="closeModal">
+    <div v-if="activeDirectory" class="modal-backdrop" @click.self="closeModal">
       <div class="modal" :style="tableStyle">
         <div class="modal-header">
           <div>
@@ -46,45 +41,29 @@
           <button class="btn" type="button" @click="closeModal">Закрыть</button>
         </div>
 
-        <div v-if="undoState.record" class="undo-banner">
-          <span>
-            {{ undoState.label }} удалена. Вернуть изменения?
-          </span>
-          <button class="btn btn-primary" type="button" @click="undoDelete">Отменить</button>
-        </div>
-
-        <div v-if="pendingNavigation.type && unsavedChanges" class="unsaved-banner">
-          <div class="unsaved-text">Есть несохранённые данные.</div>
-          <div class="unsaved-actions">
-            <button class="btn" type="button" @click="discardAndContinue">Закрыть без сохранения</button>
-            <button class="btn" type="button" @click="saveDraftAndContinue">Сохранить черновик</button>
-            <button class="btn btn-primary" type="button" @click="saveAndContinue">Сохранить</button>
-          </div>
-        </div>
-
         <div class="modal-toolbar">
           <label class="search-field">
             <span class="input-label">Поиск</span>
             <input
-              v-model="filters[activeDatabase].search"
+              v-model="filters[activeDirectory].search"
               type="text"
               placeholder="Введите текст для поиска"
             />
           </label>
           <label v-if="currentConfig.filterKey" class="filter-field">
             <span class="input-label">{{ currentConfig.filterLabel }}</span>
-            <select v-model="filters[activeDatabase].filter">
+            <select v-model="filters[activeDirectory].filter">
               <option value="">Все</option>
               <option
                 v-for="option in availableFilters"
-                :key="option.value || option"
-                :value="option.value || option"
+                :key="option.value ?? option"
+                :value="option.value ?? option"
               >
-                {{ option.label || option }}
+                {{ option.label ?? option }}
               </option>
             </select>
           </label>
-          <button class="btn btn-primary" type="button" @click="startCreate(activeDatabase)">
+          <button class="btn btn-primary" type="button" @click="startCreate(activeDirectory)">
             Новая запись
           </button>
         </div>
@@ -96,17 +75,13 @@
             </div>
             <div class="actions-col">Действия</div>
           </div>
-          <div
-            v-for="item in filteredRecords"
-            :key="item.id"
-            class="table-row"
-          >
+          <div v-for="record in filteredRecords" :key="record.id || record._id" class="table-row">
             <div v-for="column in currentConfig.columns" :key="column.key">
-              {{ displayValue(item, column) }}
+              {{ formatValue(record[column.key]) }}
             </div>
             <div class="actions-col actions-col-body">
-              <button class="btn" type="button" @click="startEdit(item)">Редактировать</button>
-              <button class="btn btn-danger" type="button" @click="deleteRecord(item.id)">
+              <button class="btn" type="button" @click="startEdit(record)">Редактировать</button>
+              <button class="btn btn-danger" type="button" @click="deleteRecord(record)">
                 Удалить
               </button>
             </div>
@@ -120,12 +95,7 @@
           <div class="form-grid-title">
             {{ editingId ? 'Редактирование записи' : 'Создание записи' }}
           </div>
-          <label
-            v-for="field in currentConfig.fields"
-            :key="field.key"
-            :class="{ 'span-2': field.fullWidth, 'has-error': validationHints[field.key] }"
-            :data-field-key="field.key"
-          >
+          <label v-for="field in currentConfig.fields" :key="field.key" :class="{ 'span-2': field.fullWidth }">
             {{ field.label }}
             <input
               v-if="field.type === 'text' || field.type === 'number' || field.type === 'datetime-local'"
@@ -135,15 +105,8 @@
               :min="field.min"
               :placeholder="field.placeholder"
               :required="field.required"
-              :list="emailListId(field)"
-              @input="handleInput(field)"
             />
-            <select
-              v-else-if="field.type === 'select'"
-              v-model="form[field.key]"
-              :required="field.required"
-              @change="handleInput(field)"
-            >
+            <select v-else-if="field.type === 'select'" v-model="form[field.key]" :required="field.required">
               <option value="" disabled>Выберите</option>
               <option
                 v-for="option in fieldOptions(field)"
@@ -153,10 +116,6 @@
                 {{ option.label ?? option }}
               </option>
             </select>
-            <datalist v-if="emailListId(field)" :id="emailListId(field)">
-              <option v-for="hint in emailHints[field.key] || []" :key="hint" :value="hint" />
-            </datalist>
-            <div v-if="validationHints[field.key]" class="field-hint">{{ validationHints[field.key] }}</div>
           </label>
 
           <div class="modal-actions span-2">
@@ -172,47 +131,50 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue';
+import { computed, onMounted, reactive, ref } from 'vue';
 import axios from 'axios';
 
-const databases = [
+const directories = [
   {
     key: 'users',
     title: 'Пользователи',
-    description: 'Сотрудники, их роли и доступы.',
+    description: 'Сотрудники, роли и контакты.',
     tags: ['Доступы', 'Роли'],
   },
   {
     key: 'product-categories',
     title: 'Категории продукции',
-    description: 'Группы и разрезы для каталога продукции.',
+    description: 'Группы номенклатуры для каталога и калькулятора.',
     tags: ['Категории', 'Группы'],
   },
   {
     key: 'products',
     title: 'Продукция',
-    description: 'Каталог продукции с ценами для калькулятора и SKU.',
-    tags: ['Категории', 'SKU', 'Тиражи'],
+    description: 'Каталог SKU с ценами и базовыми тиражами.',
+    tags: ['SKU', 'Каталог'],
   },
   {
     key: 'cash-shifts',
     title: 'Кассовые смены',
-    description: 'История смен с суммами и ответственных.',
+    description: 'Смены кассы с ответственными и суммами.',
     tags: ['Касса', 'История'],
   },
   {
     key: 'clients',
     title: 'Клиенты',
-    description: 'Клиентская база с контактами.',
+    description: 'База клиентов и контактов.',
     tags: ['B2B', 'B2C'],
   },
   {
     key: 'organizations',
     title: 'Организации',
-    description: 'Юрлица для заказов и счетов.',
-    tags: ['Юрлица', 'B2B'],
+    description: 'Юридические лица и реквизиты.',
+    tags: ['Юрлица', 'Реквизиты'],
   },
 ];
+
+const categoryOptions = ref([]);
+const userOptions = ref([]);
 
 const records = reactive({
   users: [],
@@ -223,20 +185,17 @@ const records = reactive({
   organizations: [],
 });
 
-const categoryOptions = ref([]);
-const userOptions = ref([]);
-const validationHints = reactive({});
-const emailHints = reactive({});
-const undoState = reactive({ timer: null, record: null, type: '', label: '' });
-const unsavedChanges = ref(false);
-const formTouched = ref(false);
-const suspendAutosave = ref(false);
-const pendingNavigation = reactive({ type: '', target: '' });
+const filters = reactive(
+  directories.reduce((acc, directory) => {
+    acc[directory.key] = { search: '', filter: '' };
+    return acc;
+  }, {})
+);
 
 const databaseConfigs = {
   users: {
     title: 'Пользователи',
-    description: 'Сотрудники, их роли и контактные данные.',
+    description: 'Сотрудники, их роли и контакты.',
     columns: [
       { key: 'name', label: 'Имя' },
       { key: 'role', label: 'Роль' },
@@ -390,38 +349,31 @@ const databaseConfigs = {
   },
 };
 
-const activeDatabase = ref('');
+const activeDirectory = ref('');
 const editingId = ref(null);
 const form = ref({});
 
-const emailDomains = ['gmail.com', 'yandex.ru', 'mail.ru', 'icloud.com', 'outlook.com'];
+const currentConfig = computed(() => databaseConfigs[activeDirectory.value] || { columns: [], fields: [] });
 
-const filters = reactive(
-  Object.keys(databaseConfigs).reduce((acc, key) => {
-    acc[key] = { search: '', filter: '' };
-    return acc;
-  }, {})
-);
-
-const currentConfig = computed(() => databaseConfigs[activeDatabase.value] || {});
 const availableFilters = computed(() => {
-  if (!activeDatabase.value) return [];
   const filterKey = currentConfig.value.filterKey;
-  if (!filterKey) return [];
-  const options = new Map();
-  (records[activeDatabase.value] || [])
-    .map((item) => item[filterKey])
-    .filter(Boolean)
-    .forEach((value) => {
-      const label = typeof value === 'object' ? value.label || value.name : value;
-      const val = typeof value === 'object' ? value.value || value.id : value;
-      options.set(val, label);
-    });
-  return Array.from(options.entries()).map(([value, label]) => ({ value, label }));
+  if (!filterKey || !activeDirectory.value) return [];
+
+  const values = new Map();
+  (records[activeDirectory.value] || []).forEach((item) => {
+    const value = item[filterKey];
+    const label = typeof value === 'object' ? value.label || value.name || value.title : value;
+    const val = typeof value === 'object' ? value.value || value.id : value;
+    if (val !== undefined && val !== null) {
+      values.set(String(val), label ?? val);
+    }
+  });
+
+  return Array.from(values.entries()).map(([value, label]) => ({ value, label }));
 });
 
 const tableStyle = computed(() => {
-  const columns = currentConfig.value?.columns?.length || 1;
+  const columns = currentConfig.value.columns?.length || 1;
   const baseWidth = 360 + columns * 160;
   return {
     '--column-count': columns,
@@ -429,373 +381,134 @@ const tableStyle = computed(() => {
   };
 });
 
-const hasAnyRecords = computed(() => (records[activeDatabase.value] || []).length > 0);
+const hasAnyRecords = computed(() => (records[activeDirectory.value] || []).length > 0);
 
 const filteredRecords = computed(() => {
-  if (!activeDatabase.value) return [];
-  const { search, filter } = filters[activeDatabase.value];
-  const config = currentConfig.value;
-  const normalize = (value) =>
-    String(value || '')
-      .toLowerCase()
-      .replace('ё', 'е')
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '');
+  if (!activeDirectory.value) return [];
+  const { search, filter } = filters[activeDirectory.value];
+  const searchQuery = search.trim().toLowerCase();
 
-  return (records[activeDatabase.value] || [])
+  return (records[activeDirectory.value] || [])
     .filter((item) => {
-      if (filter && config.filterKey) {
-        return String(item[config.filterKey] || '').toLowerCase() === String(filter).toLowerCase();
-      }
-      return true;
+      if (!currentConfig.value.filterKey || !filter) return true;
+      return String(item[currentConfig.value.filterKey] ?? '').toLowerCase() === String(filter).toLowerCase();
     })
     .filter((item) => {
-      if (!search) return true;
-      const query = normalize(search.trim());
-      return (config.searchable || []).some((key) => normalize(item[key]).includes(query));
+      if (!searchQuery) return true;
+      return (currentConfig.value.searchable || []).some((key) =>
+        String(item[key] ?? '').toLowerCase().includes(searchQuery)
+      );
     });
 });
 
-const fieldOptions = (field) => {
+function fieldOptions(field) {
   if (Array.isArray(field.options)) return field.options;
-  if (field.options?.value) return field.options.value;
   if (Array.isArray(field.options?.value)) return field.options.value;
   return field.options || [];
-};
+}
 
-const normalizeKey = (value) => String(value || '').replace(/[_\-\s]/g, '').toLowerCase();
-const toCamel = (value) => value.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
-const toSnake = (value) => value.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`);
-
-const keyVariants = (key) => {
-  const base = [key, toCamel(key), toSnake(key), key.replace(/\s+/g, '')];
-  const withSuffix = ['name', 'label', 'title', 'value', 'id'].flatMap((suffix) => [
-    `${key}_${suffix}`,
-    `${toCamel(key)}${suffix.charAt(0).toUpperCase() + suffix.slice(1)}`,
-    `${toSnake(key)}_${suffix}`,
-  ]);
-  return new Set([...base, ...withSuffix].map((val) => normalizeKey(val)));
-};
-
-const findValue = (source, key) => {
-  if (!source) return undefined;
-  const variants = keyVariants(key);
-  const entries = [
-    ...(source ? Object.entries(source) : []),
-    ...(source?.data ? Object.entries(source.data) : []),
-  ];
-
-  for (const [entryKey, value] of entries) {
-    if (variants.has(normalizeKey(entryKey))) {
-      return value;
-    }
-  }
-
-  return undefined;
-};
-
-const displayValue = (record, column) => {
-  const primary = findValue(record, column.key);
-  const fallback = findValue(record?.__source, column.key);
-  const value = primary ?? fallback;
-
-  if (value === undefined || value === null) return '';
+function formatValue(value) {
+  if (value === null || value === undefined) return '';
+  if (Array.isArray(value)) return value.map(formatValue).join(', ');
+  if (typeof value === 'object') return value.label || value.name || value.title || value.value || value.id || '';
   if (typeof value === 'boolean') return value ? 'Да' : 'Нет';
-  if (typeof value === 'object') return value.label || value.name || value.title || JSON.stringify(value);
   return value;
-};
+}
 
-async function loadDatabase(key) {
-  const { data } = await axios.get(`/api/directories/${key}`);
-
-  const config = databaseConfigs[key];
-  const columnKeys = config?.columns?.map((c) => c.key) || [];
-  const fieldKeys = config?.fields?.map((f) => f.key) || [];
-  const filterKey = config?.filterKey ? [config.filterKey] : [];
-  const keysToHydrate = Array.from(new Set([...columnKeys, ...fieldKeys, ...filterKey]));
-
-  records[key] = (data.records || []).map((record) => {
-    const hydrated = keysToHydrate.reduce((acc, fieldKey) => {
-      const value = findValue(record, fieldKey);
-      if (value !== undefined) {
-        acc[fieldKey] = value;
-      }
-      return acc;
-    }, {});
-
-    return { ...record, ...hydrated, __source: record };
+function resetForm(key = activeDirectory.value) {
+  if (!key) return;
+  const template = {};
+  (databaseConfigs[key]?.fields || []).forEach((field) => {
+    template[field.key] = '';
   });
+  form.value = { ...template };
+  editingId.value = null;
+}
 
-  if (key === 'products') {
-    categoryOptions.value = (data.meta?.categories || []).map((c) => ({
-      value: c.id,
-      label: c.name,
+async function loadOptions() {
+  try {
+    const [{ data: categories }, { data: users }] = await Promise.all([
+      axios.get('/api/directories/product-categories'),
+      axios.get('/api/directories/users'),
+    ]);
+
+    categoryOptions.value = (categories.records || []).map((item) => ({
+      value: item.id,
+      label: item.name,
     }));
-  }
 
-  if (key === 'cash-shifts') {
-    userOptions.value = (data.meta?.users || []).map((u) => ({
-      value: u.id,
-      label: u.name,
+    userOptions.value = (users.records || []).map((item) => ({
+      value: item.id,
+      label: item.name,
     }));
+  } catch (e) {
+    // keep defaults on failure
   }
+}
 
-  if (key === 'users' && data.records) {
-    userOptions.value = data.records.map((u) => ({ value: u.id, label: u.name }));
+async function loadDirectory(key) {
+  try {
+    const { data } = await axios.get(`/api/directories/${key}`);
+    records[key] = data.records || [];
+  } catch (e) {
+    records[key] = [];
   }
 }
 
 async function loadAll() {
-  await Promise.all(databases.map((db) => loadDatabase(db.key)));
+  await loadOptions();
+  await Promise.all(directories.map((directory) => loadDirectory(directory.key)));
 }
 
-function applyNavigation(target = '') {
-  if (pendingNavigation.type === 'switch') {
-    activateDatabase(target || pendingNavigation.target);
-  }
-  if (pendingNavigation.type === 'close') {
-    activeDatabase.value = '';
-    editingId.value = null;
-  }
-  pendingNavigation.type = '';
-  pendingNavigation.target = '';
-}
-
-function requestNavigation(type, target = '') {
-  if (unsavedChanges.value) {
-    pendingNavigation.type = type;
-    pendingNavigation.target = target;
-    return true;
-  }
-  return false;
-}
-
-function activateDatabase(key) {
-  activeDatabase.value = key;
-  loadDatabase(key);
-  resetForm();
-  filters[key].search = '';
-  filters[key].filter = '';
-}
-
-function openDatabase(key) {
-  const blocked = requestNavigation('switch', key);
-  if (blocked) return;
-  activateDatabase(key);
+function openDirectory(key) {
+  activeDirectory.value = key;
+  resetForm(key);
+  loadDirectory(key);
 }
 
 function closeModal() {
-  const blocked = requestNavigation('close');
-  if (blocked) return;
-  activeDatabase.value = '';
+  activeDirectory.value = '';
   editingId.value = null;
 }
 
 function startCreate(key) {
-  if (key) {
-    activeDatabase.value = key;
+  if (key && key !== activeDirectory.value) {
+    openDirectory(key);
+    return;
   }
-  editingId.value = null;
-  const fields = databaseConfigs[activeDatabase.value].fields;
-  const draft = readDraft(activeDatabase.value);
-  suspendAutosave.value = true;
-  formTouched.value = false;
-  form.value = fields.reduce((acc, field) => {
-    const draftValue = draft?.[field.key];
-    if (draftValue !== undefined) {
-      acc[field.key] = draftValue;
-    } else if (field.type === 'datetime-local') {
-      acc[field.key] = new Date().toISOString().slice(0, 16);
-    } else {
-      acc[field.key] = '';
-    }
-    return acc;
-  }, {});
-  validationHintsReset();
-  unsavedChanges.value = false;
-  nextTick(() => focusField(fields.find((f) => f.required)?.key));
-  suspendAutosave.value = false;
+  resetForm(key || activeDirectory.value);
 }
 
-function startEdit(item) {
-  editingId.value = item.id;
-  const { __source, ...rest } = item;
-  form.value = { ...rest };
-  validationHintsReset();
-  formTouched.value = false;
-}
-
-function resetForm() {
-  if (!activeDatabase.value) return;
-  const fields = databaseConfigs[activeDatabase.value].fields;
-  form.value = fields.reduce((acc, field) => {
-    acc[field.key] = '';
-    return acc;
-  }, {});
-  editingId.value = null;
-  validationHintsReset();
-  unsavedChanges.value = false;
-  formTouched.value = false;
-}
-
-async function deleteRecord(id) {
-  if (!activeDatabase.value) return;
-  const current = (records[activeDatabase.value] || []).find((item) => item.id === id);
-  await axios.delete(`/api/directories/${activeDatabase.value}/${id}`);
-  await loadDatabase(activeDatabase.value);
-  if (undoState.timer) clearTimeout(undoState.timer);
-  undoState.record = current || null;
-  undoState.type = activeDatabase.value;
-  undoState.label = current?.name || 'Запись';
-  undoState.timer = setTimeout(() => {
-    undoState.record = null;
-    undoState.type = '';
-    undoState.label = '';
-  }, 10000);
+function startEdit(record) {
+  if (!activeDirectory.value) return;
+  editingId.value = record.id || record._id;
+  form.value = { ...record };
 }
 
 async function saveRecord() {
-  if (!activeDatabase.value) return;
-  const missing = (currentConfig.value.fields || []).filter(
-    (field) => field.required && !form.value[field.key]
-  );
-  validationHintsReset();
-  if (missing.length) {
-    missing.forEach((field) => {
-      validationHints[field.key] = 'Заполните обязательное поле';
-    });
-    nextTick(() => focusField(missing[0]?.key));
-    return;
-  }
+  if (!activeDirectory.value) return;
+  const key = activeDirectory.value;
   const payload = { ...form.value };
+
   if (editingId.value) {
-    await axios.put(`/api/directories/${activeDatabase.value}/${editingId.value}`, payload);
+    await axios.put(`/api/directories/${key}/${editingId.value}`, payload);
   } else {
-    await axios.post(`/api/directories/${activeDatabase.value}`, payload);
-  }
-  await loadDatabase(activeDatabase.value);
-  resetForm();
-  unsavedChanges.value = false;
-  formTouched.value = false;
-  clearDraft(activeDatabase.value);
-  if (pendingNavigation.type) {
-    applyNavigation();
-  }
-}
-
-function validationHintsReset() {
-  Object.keys(validationHints).forEach((key) => delete validationHints[key]);
-}
-
-function readDraft(key) {
-  try {
-    const raw = localStorage.getItem(`directories-draft-${key}`);
-    return raw ? JSON.parse(raw).form : null;
-  } catch (e) {
-    return null;
-  }
-}
-
-function clearDraft(key) {
-  localStorage.removeItem(`directories-draft-${key}`);
-}
-
-function handleInput(field) {
-  const value = form.value[field.key];
-  if (!value && value !== 0) {
-    formTouched.value = true;
-    unsavedChanges.value = true;
-    return;
+    await axios.post(`/api/directories/${key}`, payload);
   }
 
-  if (/phone/i.test(field.key)) {
-    const digits = String(value).replace(/\D/g, '').replace(/^8/, '7').slice(0, 11);
-    const formatted = digits
-      .replace(/^7?/, '')
-      .replace(/^(\d{0,3})(\d{0,3})(\d{0,2})(\d{0,2}).*/, (_, a, b, c, d) =>
-        `+7${a ? ` (${a}` : ''}${a && a.length === 3 ? ')' : ''}${b ? ` ${b}` : ''}${c ? `-${c}` : ''}${d ? `-${d}` : ''}`.trim()
-      )
-      .replace(/\s+$/, '');
-    form.value[field.key] = formatted;
-  }
-
-  if (/name|contact/i.test(field.key) && typeof value === 'string') {
-    const capitalized = value
-      .split(/\s+/)
-      .filter(Boolean)
-      .map((chunk) => chunk.charAt(0).toUpperCase() + chunk.slice(1).toLowerCase())
-      .join(' ');
-    form.value[field.key] = capitalized;
-  }
-
-  if (/email/i.test(field.key) && typeof value === 'string') {
-    const [localPart] = value.split('@');
-    emailHints[field.key] = emailDomains.map((domain) => `${localPart}@${domain}`);
-  }
-
-  unsavedChanges.value = true;
-  formTouched.value = true;
+  await loadDirectory(key);
+  resetForm(key);
 }
 
-function emailListId(field) {
-  if (/email/i.test(field.key)) return `email-hints-${field.key}`;
-  return null;
-}
+async function deleteRecord(record) {
+  if (!activeDirectory.value) return;
+  const key = activeDirectory.value;
+  const id = record.id || record._id;
+  if (!id) return;
 
-function focusField(key) {
-  if (!key) return;
-  const fieldEl = document.querySelector(`[data-field-key="${key}"] input, [data-field-key="${key}"] select`);
-  if (fieldEl) {
-    fieldEl.focus();
-    fieldEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
-  }
+  await axios.delete(`/api/directories/${key}/${id}`);
+  await loadDirectory(key);
 }
-
-async function undoDelete() {
-  if (!undoState.record || !undoState.type) return;
-  const payload = { ...undoState.record };
-  delete payload.id;
-  await axios.post(`/api/directories/${undoState.type}`, payload);
-  await loadDatabase(undoState.type);
-  undoState.record = null;
-  undoState.type = '';
-  undoState.label = '';
-}
-
-function saveAndContinue() {
-  saveRecord();
-}
-
-function saveDraftAndContinue() {
-  if (!activeDatabase.value) return;
-  if (formTouched.value) {
-    localStorage.setItem(
-      `directories-draft-${activeDatabase.value}`,
-      JSON.stringify({ form: form.value, timestamp: Date.now() })
-    );
-  }
-  unsavedChanges.value = false;
-  applyNavigation();
-}
-
-function discardAndContinue() {
-  unsavedChanges.value = false;
-  formTouched.value = false;
-  applyNavigation();
-}
-
-watch(
-  () => ({ ...form.value, db: activeDatabase.value }),
-  () => {
-    if (!activeDatabase.value || suspendAutosave.value || !formTouched.value) return;
-    localStorage.setItem(
-      `directories-draft-${activeDatabase.value}`,
-      JSON.stringify({ form: form.value, timestamp: Date.now() })
-    );
-    unsavedChanges.value = true;
-  },
-  { deep: true }
-);
 
 onMounted(loadAll);
 </script>
@@ -915,36 +628,6 @@ onMounted(loadAll);
   gap: 16px;
 }
 
-.undo-banner {
-  background: #0f172a;
-  border: 1px dashed #374151;
-  padding: 10px 12px;
-  border-radius: 10px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.unsaved-banner {
-  background: rgba(255, 193, 7, 0.08);
-  border: 1px solid rgba(255, 193, 7, 0.4);
-  color: #fbbf24;
-  padding: 12px;
-  border-radius: 10px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-
-.unsaved-actions {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
 .modal-header {
   display: flex;
   align-items: center;
@@ -1030,17 +713,6 @@ label {
   flex-direction: column;
   gap: 4px;
   font-size: 13px;
-}
-
-.has-error input,
-.has-error select {
-  border-color: #ef4444;
-  box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.3);
-}
-
-.field-hint {
-  color: #f87171;
-  font-size: 12px;
 }
 
 input,
