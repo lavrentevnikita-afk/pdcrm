@@ -463,58 +463,45 @@ const fieldOptions = (field) => {
   return field.options || [];
 };
 
+const normalizeKey = (value) => String(value || '').replace(/[_\-\s]/g, '').toLowerCase();
 const toCamel = (value) => value.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
 const toSnake = (value) => value.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`);
 
-const resolveAlias = (record, key) => {
-  const camel = toCamel(key);
-  const snake = toSnake(key);
+const keyVariants = (key) => {
+  const base = [key, toCamel(key), toSnake(key), key.replace(/\s+/g, '')];
+  const withSuffix = ['name', 'label', 'title', 'value', 'id'].flatMap((suffix) => [
+    `${key}_${suffix}`,
+    `${toCamel(key)}${suffix.charAt(0).toUpperCase() + suffix.slice(1)}`,
+    `${toSnake(key)}_${suffix}`,
+  ]);
+  return new Set([...base, ...withSuffix].map((val) => normalizeKey(val)));
+};
 
-  const aliasCandidates = [
-    `${key}_name`,
-    `${key}_label`,
-    `${camel}Name`,
-    `${camel}Label`,
-    `${snake}_name`,
-    `${snake}_label`,
+const findValue = (source, key) => {
+  if (!source) return undefined;
+  const variants = keyVariants(key);
+  const entries = [
+    ...(source ? Object.entries(source) : []),
+    ...(source?.data ? Object.entries(source.data) : []),
   ];
 
-  const found = aliasCandidates.find((candidate) => record?.[candidate] !== undefined);
-  if (found) return record[found];
-  if (record?.data && record.data[key] !== undefined) return record.data[key];
+  for (const [entryKey, value] of entries) {
+    if (variants.has(normalizeKey(entryKey))) {
+      return value;
+    }
+  }
+
   return undefined;
 };
 
 const displayValue = (record, column) => {
-  const key = column.key;
-  const rawRecord = record?.__raw || record;
-  const snakeKey = toSnake(key);
-  const camelKey = toCamel(key);
+  const primary = findValue(record, column.key);
+  const fallback = findValue(record?.__source, column.key);
+  const value = primary ?? fallback;
 
-  const normalizeKey = (value) => String(value || '').replace(/[_\-\s]/g, '').toLowerCase();
-  const normalizedKey = normalizeKey(key);
-
-  const candidates = [
-    record?.[key],
-    record?.data?.[key],
-    record?.[camelKey],
-    record?.[snakeKey],
-    resolveAlias(record, key),
-    rawRecord?.[key],
-    rawRecord?.data?.[key],
-    rawRecord?.[camelKey],
-    rawRecord?.[snakeKey],
-    resolveAlias(rawRecord, key),
-    Object.entries(rawRecord || {})
-      .filter(([entryKey]) => normalizeKey(entryKey) === normalizedKey)
-      .map(([, value]) => value)[0],
-  ];
-
-  const value = candidates.find((v) => v !== undefined && v !== null && v !== '');
-
-  if (value === undefined) return '';
-  if (typeof value === 'object') return value.label || value.name || JSON.stringify(value);
+  if (value === undefined || value === null) return '';
   if (typeof value === 'boolean') return value ? 'Да' : 'Нет';
+  if (typeof value === 'object') return value.label || value.name || value.title || JSON.stringify(value);
   return value;
 };
 
@@ -524,29 +511,19 @@ async function loadDatabase(key) {
   const config = databaseConfigs[key];
   const columnKeys = config?.columns?.map((c) => c.key) || [];
   const fieldKeys = config?.fields?.map((f) => f.key) || [];
-  const knownKeys = new Set(['id', ...columnKeys, ...fieldKeys]);
+  const filterKey = config?.filterKey ? [config.filterKey] : [];
+  const keysToHydrate = Array.from(new Set([...columnKeys, ...fieldKeys, ...filterKey]));
 
   records[key] = (data.records || []).map((record) => {
-    const normalized = { ...record, __raw: { ...record } };
+    const hydrated = keysToHydrate.reduce((acc, fieldKey) => {
+      const value = findValue(record, fieldKey);
+      if (value !== undefined) {
+        acc[fieldKey] = value;
+      }
+      return acc;
+    }, {});
 
-    // Align backend keys (snake_case / camelCase) to the keys that the UI renders
-    knownKeys.forEach((k) => {
-      if (normalized[k] !== undefined && normalized[k] !== null && normalized[k] !== '') return;
-      const camel = toCamel(k);
-      const snake = toSnake(k);
-      const aliasValue = resolveAlias(record, k);
-      const direct = record?.[k];
-      normalized[k] =
-        direct !== undefined && direct !== null && direct !== ''
-          ? direct
-          : record?.[camel] !== undefined
-            ? record[camel]
-            : record?.[snake] !== undefined
-              ? record[snake]
-              : aliasValue;
-    });
-
-    return normalized;
+    return { ...record, ...hydrated, __source: record };
   });
 
   if (key === 'products') {
@@ -642,7 +619,8 @@ function startCreate(key) {
 
 function startEdit(item) {
   editingId.value = item.id;
-  form.value = { ...item };
+  const { __source, ...rest } = item;
+  form.value = { ...rest };
   validationHintsReset();
   formTouched.value = false;
 }
