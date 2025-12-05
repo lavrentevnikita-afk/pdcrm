@@ -491,6 +491,9 @@ const displayValue = (record, column) => {
   const snakeKey = toSnake(key);
   const camelKey = toCamel(key);
 
+  const normalizeKey = (value) => String(value || '').replace(/[_\-\s]/g, '').toLowerCase();
+  const normalizedKey = normalizeKey(key);
+
   const candidates = [
     record?.[key],
     record?.data?.[key],
@@ -502,6 +505,9 @@ const displayValue = (record, column) => {
     rawRecord?.[camelKey],
     rawRecord?.[snakeKey],
     resolveAlias(rawRecord, key),
+    Object.entries(rawRecord || {})
+      .filter(([entryKey]) => normalizeKey(entryKey) === normalizedKey)
+      .map(([, value]) => value)[0],
   ];
 
   const value = candidates.find((v) => v !== undefined && v !== null && v !== '');
