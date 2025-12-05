@@ -1,90 +1,66 @@
 <template>
-  <div v-if="visible" class="drawer-backdrop" @click.self="handleClose">
-    <div class="drawer-panel">
-      <div class="drawer-header">
-        <div>
-          <div class="drawer-title">Новый заказ</div>
-          <div class="drawer-subtitle">
-            Клиент, дедлайн и калькулятор заказа с позициями и скидками.
-          </div>
-        </div>
-        <button type="button" class="drawer-close" @click="handleClose">
-          ×
-        </button>
-      </div>
+  <AppDrawer
+    :visible="visible"
+    title="Новый заказ"
+    subtitle="Клиент, дедлайн и калькулятор заказа с позициями и скидками"
+    @close="handleClose"
+  >
+    <div v-if="error" class="drawer-error">
+      {{ error }}
+    </div>
 
-      <div class="drawer-body">
-        <div v-if="error" class="drawer-error">
-          {{ error }}
+    <form @submit.prevent="handleSubmit">
+      <!-- Базовые поля заказа -->
+      <section class="drawer-section">
+        <div class="drawer-section-title">
+          Клиент и заказ
         </div>
 
-        <form @submit.prevent="handleSubmit">
-          <!-- Базовые поля заказа -->
-          <section class="drawer-section">
-            <div class="drawer-section-title">
-              Клиент и заказ
-            </div>
+        <div class="drawer-grid-2">
+          <AppInput
+            v-model="form.clientName"
+            label="Клиент"
+            placeholder="ФИО или компания"
+          />
 
-            <div class="drawer-grid-2">
-              <label class="drawer-field">
-                <span class="drawer-label">Клиент</span>
-                <input
-                  v-model="form.clientName"
-                  type="text"
-                  placeholder="ФИО или компания"
-                />
-              </label>
+          <AppInput
+            v-model="form.clientPhone"
+            label="Телефон"
+            placeholder="+7 (999) 123-45-67"
+            mask="phone"
+            :error="phoneError"
+          />
+        </div>
 
-              <label class="drawer-field">
-                <span class="drawer-label">Телефон</span>
-                <input
-                  v-model="form.clientPhone"
-                  type="tel"
-                  placeholder="+7…"
-                />
-              </label>
-            </div>
+        <AppInput
+          v-model="form.title"
+          label="Название заказа"
+          placeholder="Например: Визитки для ООО «Ромашка»"
+        />
 
-            <label class="drawer-field">
-              <span class="drawer-label">
-                Название заказа
-              </span>
-              <input
-                v-model="form.title"
-                type="text"
-                placeholder="Например: Визитки для ООО «Ромашка»"
-              />
-            </label>
+        <label class="drawer-field">
+          <span class="drawer-label">Комментарий к заказу</span>
+          <textarea
+            v-model="form.description"
+            rows="3"
+            placeholder="Требования, материалы, цвета, размеры…"
+          />
+        </label>
 
-            <label class="drawer-field">
-              <span class="drawer-label">Комментарий к заказу</span>
-              <textarea
-                v-model="form.description"
-                rows="3"
-                placeholder="Требования, материалы, цвета, размеры…"
-              />
-            </label>
+        <div class="drawer-grid-2">
+          <AppInput v-model="form.deadline" label="Дедлайн" type="date" />
 
-            <div class="drawer-grid-2">
-              <label class="drawer-field">
-                <span class="drawer-label">Дедлайн</span>
-                <input
-                  v-model="form.deadline"
-                  type="date"
-                />
-              </label>
-
-              <label class="drawer-field drawer-field--checkbox">
-                <input
-                  v-model="form.isHot"
-                  type="checkbox"
-                />
-                <span class="drawer-label-inline">
-                  Горящий заказ
-                </span>
-              </label>
-            </div>
-          </section>
+          <label class="drawer-field drawer-field--checkbox">
+            <input
+              v-model="form.isHot"
+              type="checkbox"
+            />
+            <span class="drawer-label-inline">
+              Горящий заказ
+            </span>
+          </label>
+        </div>
+      </section>
 
           <!-- Калькулятор: продукция -->
           <section class="drawer-section">
@@ -106,13 +82,15 @@
               />
             </div>
 
-            <button
+            <AppButton
               type="button"
-              class="btn-secondary drawer-add-btn"
+              variant="secondary"
+              size="sm"
+              class="drawer-add-btn"
               @click="addItem('product')"
             >
               + Продукция
-            </button>
+            </AppButton>
 
             <div class="drawer-section-title drawer-section-title--mt">
               Постпечатка
@@ -133,13 +111,15 @@
               />
             </div>
 
-            <button
+            <AppButton
               type="button"
-              class="btn-secondary drawer-add-btn"
+              variant="secondary"
+              size="sm"
+              class="drawer-add-btn"
               @click="addItem('postpress')"
             >
               + Постпечатка
-            </button>
+            </AppButton>
           </section>
 
           <!-- Итоги и скидки -->
@@ -188,31 +168,30 @@
 
           <!-- Действия -->
           <section class="drawer-section drawer-section--actions">
-            <button
+            <AppButton
               type="submit"
-              class="btn-primary"
-              :disabled="submitting"
+              :loading="submitting"
+              :disabled="submitting || !!phoneError"
             >
-              {{ submitting ? 'Сохранение…' : 'Сохранить заказ' }}
-            </button>
-            <button
-              type="button"
-              class="btn-secondary"
-              @click="handleClose"
-            >
+              Сохранить заказ
+            </AppButton>
+            <AppButton type="button" variant="secondary" @click="handleClose">
               Отмена
-            </button>
+            </AppButton>
           </section>
         </form>
-      </div>
     </div>
-  </div>
+  </AppDrawer>
 </template>
 
 <script setup>
 import { computed, reactive, ref, watch } from 'vue';
 import api from '../../utils/apiClient';
 import OrderItemRow from './OrderItemRow.vue';
+import AppDrawer from './ui/AppDrawer.vue';
+import AppInput from './ui/AppInput.vue';
+import AppButton from './ui/AppButton.vue';
+import { useToastStore } from '../store/toast';
 
 const props = defineProps({
   visible: {
@@ -222,6 +201,8 @@ const props = defineProps({
 });
 
 const emit = defineEmits(['close', 'created']);
+
+const toast = useToastStore();
 
 const form = reactive({
   clientName: '',
@@ -239,6 +220,11 @@ const items = ref([]);
 const productCategories = ref([]);
 const submitting = ref(false);
 const error = ref('');
+const phoneError = computed(() => {
+  if (!form.clientPhone) return '';
+  const digits = form.clientPhone.replace(/\D/g, '');
+  return digits.length < 11 ? 'Заполните телефон полностью' : '';
+});
 
 let nextId = 1;
 
@@ -280,7 +266,9 @@ function addItem(type = 'product') {
 }
 
 function removeItem(id) {
-  items.value = items.value.filter((i) => i.id !== id);
+  if (window.confirm('Удалить позицию из заказа?')) {
+    items.value = items.value.filter((i) => i.id !== id);
+  }
 }
 
 const itemsMap = computed({
@@ -374,6 +362,11 @@ async function handleSubmit() {
     return;
   }
 
+  if (phoneError.value) {
+    error.value = phoneError.value;
+    return;
+  }
+
   submitting.value = true;
   error.value = '';
 
@@ -409,11 +402,13 @@ async function handleSubmit() {
 
     const { data } = await api.post('/orders', payload);
     emit('created', data);
+    toast.success('Заказ создан', 'Отправили в работу и обновили список');
     handleClose();
   } catch (e) {
     // eslint-disable-next-line no-console
     console.error(e);
     error.value = 'Не удалось сохранить заказ. Попробуйте ещё раз.';
+    toast.error('Ошибка сохранения', 'Проверьте подключение и реквизиты заказа');
   } finally {
     submitting.value = false;
   }

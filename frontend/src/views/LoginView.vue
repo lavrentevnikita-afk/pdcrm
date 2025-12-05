@@ -1,34 +1,31 @@
 <template>
   <div class="login-page">
-    <div class="login-card">
-      <div class="page-title">Вход в систему</div>
-      <p class="page-subtitle">
-        Введите персональный код доступа, который выдаёт администратор.
-      </p>
-
+    <AppCard
+      class="login-card"
+      title="Вход в систему"
+      subtitle="Введите персональный код доступа, который выдаёт администратор"
+    >
       <form class="login-form" @submit.prevent="handleSubmit">
-        <label class="login-label">
-          Код доступа
-          <input
-            v-model="code"
-            type="password"
-            autocomplete="one-time-code"
-            placeholder="Например, 1111"
-            :disabled="auth.loading"
-          />
-        </label>
+        <AppInput
+          v-model="code"
+          label="Код доступа"
+          type="password"
+          autocomplete="one-time-code"
+          placeholder="Например, 1111"
+          :disabled="auth.loading"
+          :error="auth.error"
+        />
 
-        <button
-          class="primary-button"
+        <AppButton
+          class="login-button"
+          variant="primary"
+          block
           type="submit"
-          :disabled="auth.loading || !code"
+          :loading="auth.loading"
+          :disabled="!code"
         >
-          {{ auth.loading ? 'Проверяем…' : 'Войти' }}
-        </button>
-
-        <p v-if="auth.error" class="form-error">
-          {{ auth.error }}
-        </p>
+          Войти
+        </AppButton>
       </form>
 
       <div class="login-hint">
@@ -40,7 +37,7 @@
           <li>Админ: код <code>4444</code></li>
         </ul>
       </div>
-    </div>
+    </AppCard>
   </div>
 </template>
 
@@ -48,6 +45,9 @@
 import { ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useAuthStore } from '../store/auth';
+import AppCard from '../components/ui/AppCard.vue';
+import AppInput from '../components/ui/AppInput.vue';
+import AppButton from '../components/ui/AppButton.vue';
 
 const route = useRoute();
 const router = useRouter();
