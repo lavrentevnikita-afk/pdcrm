@@ -16,6 +16,177 @@ const { calculateOrderItemPrice, recalculateOrderTotals } = require('./orders.se
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-me';
 const JWT_EXPIRES_IN = '7d';
 
+// Demo in-memory datasets for phase 7 modules
+const warehouseItems = [
+  {
+    id: 1,
+    name: 'Мелованная бумага 300 г/м²',
+    unit: 'лист',
+    stock: 850,
+    reorder_level: 300,
+    supplier: 'Поставщик А',
+    last_movement_at: new Date().toISOString(),
+  },
+  {
+    id: 2,
+    name: 'Бумага офисная A4',
+    unit: 'пачка',
+    stock: 42,
+    reorder_level: 40,
+    supplier: 'БумагаПро',
+    last_movement_at: new Date().toISOString(),
+  },
+  {
+    id: 3,
+    name: 'Баннерная ткань 440 г/м²',
+    unit: 'м²',
+    stock: 120,
+    reorder_level: 80,
+    supplier: 'Outdoor Print',
+    last_movement_at: new Date().toISOString(),
+  },
+  {
+    id: 4,
+    name: 'Пластик ПВХ 3 мм',
+    unit: 'лист',
+    stock: 25,
+    reorder_level: 30,
+    supplier: 'ПластМаркет',
+    last_movement_at: new Date().toISOString(),
+  },
+];
+
+const warehouseMovements = [
+  {
+    id: 1,
+    item_id: 1,
+    type: 'out',
+    quantity: 50,
+    note: 'Тираж визиток',
+    created_at: new Date().toISOString(),
+  },
+  {
+    id: 2,
+    item_id: 2,
+    type: 'in',
+    quantity: 20,
+    note: 'Поставка от БумагаПро',
+    created_at: new Date().toISOString(),
+  },
+];
+
+const purchaseRequests = [
+  {
+    id: 1,
+    material: 'Пластик ПВХ 3 мм',
+    quantity: 50,
+    status: 'pending',
+    requested_by: 'Анна Шахова',
+    created_at: new Date().toISOString(),
+  },
+  {
+    id: 2,
+    material: 'Баннерная ткань 440 г/м²',
+    quantity: 100,
+    status: 'approved',
+    requested_by: 'Дмитрий Павлов',
+    created_at: new Date().toISOString(),
+  },
+];
+
+const staffMembers = [
+  {
+    id: 1,
+    name: 'Анна Шахова',
+    role: 'Дизайнер',
+    department: 'Дизайн',
+    phone: '+7 999 123-45-67',
+    email: 'anna@pdcrm.local',
+    workload: 4,
+  },
+  {
+    id: 2,
+    name: 'Дмитрий Павлов',
+    role: 'Производство',
+    department: 'Цех',
+    phone: '+7 912 555-33-22',
+    email: 'd.pavlov@pdcrm.local',
+    workload: 7,
+  },
+  {
+    id: 3,
+    name: 'Мария Белова',
+    role: 'Менеджер',
+    department: 'Отдел продаж',
+    phone: '+7 921 777-11-00',
+    email: 'm.belova@pdcrm.local',
+    workload: 3,
+  },
+];
+
+const permissionMatrix = [
+  {
+    id: 1,
+    name: 'Анна Шахова',
+    role: 'designer',
+    permissions: {
+      orders: true,
+      production: false,
+      cashbox: false,
+      analytics: true,
+      warehouse: true,
+    },
+  },
+  {
+    id: 2,
+    name: 'Дмитрий Павлов',
+    role: 'production',
+    permissions: {
+      orders: true,
+      production: true,
+      cashbox: false,
+      analytics: false,
+      warehouse: true,
+    },
+  },
+  {
+    id: 3,
+    name: 'Мария Белова',
+    role: 'manager',
+    permissions: {
+      orders: true,
+      production: false,
+      cashbox: true,
+      analytics: true,
+      warehouse: false,
+    },
+  },
+];
+
+const notificationFeed = [
+  {
+    id: 1,
+    title: 'Новый заказ #2405',
+    message: 'Поступил запрос на 500 листовок. Срок — 2 дня.',
+    is_read: false,
+    created_at: new Date().toISOString(),
+  },
+  {
+    id: 2,
+    title: 'Низкий остаток: Пластик ПВХ 3 мм',
+    message: 'Остаток 25 листов, требуется докупить.',
+    is_read: false,
+    created_at: new Date().toISOString(),
+  },
+  {
+    id: 3,
+    title: 'Оплата по заказу #2330',
+    message: 'Поступила частичная оплата 18 500 ₽.',
+    is_read: true,
+    created_at: new Date().toISOString(),
+  },
+];
+
 // Basic middlewares
 app.use(cors());
 app.use(express.json());
@@ -1149,6 +1320,194 @@ app.post('/api/cash/shift/close', authMiddleware, async (req, res, next) => {
   } catch (err) {
     return next(err);
   }
+});
+
+// ===============================
+// Phase 7: Warehouse & Purchase
+// ===============================
+app.get('/api/warehouse/items', authMiddleware, (req, res) => {
+  const enriched = warehouseItems.map((item) => ({
+    ...item,
+    low_stock: item.stock <= item.reorder_level,
+  }));
+  res.json({ items: enriched });
+});
+
+app.post('/api/warehouse/items', authMiddleware, (req, res) => {
+  const { name, unit, stock, reorder_level, supplier } = req.body || {};
+  if (!name) {
+    return res.status(400).json({ message: 'Название материала обязательно' });
+  }
+
+  const nextId = Math.max(...warehouseItems.map((i) => i.id)) + 1;
+  const newItem = {
+    id: nextId,
+    name,
+    unit: unit || 'шт',
+    stock: Number(stock) || 0,
+    reorder_level: Number(reorder_level) || 0,
+    supplier: supplier || '—',
+    last_movement_at: new Date().toISOString(),
+  };
+
+  warehouseItems.push(newItem);
+  return res.status(201).json({ item: newItem });
+});
+
+app.post('/api/warehouse/movements', authMiddleware, (req, res) => {
+  const { item_id, type, quantity, note } = req.body || {};
+  const item = warehouseItems.find((i) => i.id === Number(item_id));
+
+  if (!item) {
+    return res.status(404).json({ message: 'Материал не найден' });
+  }
+  if (!['in', 'out'].includes(type)) {
+    return res.status(400).json({ message: 'Неверный тип движения' });
+  }
+  const qty = Number(quantity);
+  if (Number.isNaN(qty) || qty <= 0) {
+    return res.status(400).json({ message: 'Количество должно быть больше нуля' });
+  }
+
+  if (type === 'out' && item.stock - qty < 0) {
+    return res.status(400).json({ message: 'Недостаточно остатка' });
+  }
+
+  item.stock += type === 'in' ? qty : -qty;
+  item.last_movement_at = new Date().toISOString();
+
+  const nextId = warehouseMovements.length
+    ? Math.max(...warehouseMovements.map((m) => m.id)) + 1
+    : 1;
+  const movement = {
+    id: nextId,
+    item_id: item.id,
+    type,
+    quantity: qty,
+    note: note || '',
+    created_at: new Date().toISOString(),
+  };
+  warehouseMovements.push(movement);
+
+  return res.status(201).json({ item, movement });
+});
+
+app.get('/api/warehouse/purchase-requests', authMiddleware, (req, res) => {
+  res.json({ requests: purchaseRequests });
+});
+
+app.post('/api/warehouse/purchase-requests', authMiddleware, (req, res) => {
+  const { material, quantity } = req.body || {};
+  if (!material) {
+    return res.status(400).json({ message: 'Материал обязателен' });
+  }
+  const nextId = purchaseRequests.length
+    ? Math.max(...purchaseRequests.map((r) => r.id)) + 1
+    : 1;
+  const request = {
+    id: nextId,
+    material,
+    quantity: Number(quantity) || 0,
+    status: 'pending',
+    requested_by: req.user?.name || 'Неизвестно',
+    created_at: new Date().toISOString(),
+  };
+  purchaseRequests.push(request);
+  return res.status(201).json({ request });
+});
+
+// ===============================
+// Phase 7: Staff
+// ===============================
+app.get('/api/staff', authMiddleware, (req, res) => {
+  res.json({ staff: staffMembers });
+});
+
+// ===============================
+// Phase 7: Analytics
+// ===============================
+app.get('/api/analytics/revenue', authMiddleware, (req, res) => {
+  const points = [
+    { label: 'Пн', value: 320000 },
+    { label: 'Вт', value: 280000 },
+    { label: 'Ср', value: 360000 },
+    { label: 'Чт', value: 410000 },
+    { label: 'Пт', value: 390000 },
+    { label: 'Сб', value: 275000 },
+    { label: 'Вс', value: 190000 },
+  ];
+  res.json({
+    period: 'week',
+    total: points.reduce((sum, p) => sum + p.value, 0),
+    change: 8.4,
+    points,
+  });
+});
+
+app.get('/api/analytics/top-products', authMiddleware, (req, res) => {
+  res.json({
+    products: [
+      { name: 'Листовки А5', revenue: 520000, share: 32 },
+      { name: 'Буклеты трёхсложные', revenue: 310000, share: 19 },
+      { name: 'Баннер 3х6', revenue: 240000, share: 15 },
+      { name: 'Визитки премиум', revenue: 190000, share: 12 },
+      { name: 'Наклейки круг 50 мм', revenue: 150000, share: 9 },
+    ],
+  });
+});
+
+app.get('/api/analytics/top-clients', authMiddleware, (req, res) => {
+  res.json({
+    clients: [
+      { name: 'ООО «СеверСтрой»', revenue: 420000, orders: 18 },
+      { name: 'ИП Панкратов', revenue: 310000, orders: 12 },
+      { name: 'Coffee&Co', revenue: 270000, orders: 9 },
+      { name: 'Театр света', revenue: 230000, orders: 7 },
+    ],
+  });
+});
+
+// ===============================
+// Phase 7: Permissions
+// ===============================
+app.get('/api/permissions/users', authMiddleware, (req, res) => {
+  res.json({ users: permissionMatrix });
+});
+
+app.post('/api/permissions/:userId', authMiddleware, (req, res) => {
+  const { userId } = req.params;
+  const entry = permissionMatrix.find((u) => u.id === Number(userId));
+  if (!entry) {
+    return res.status(404).json({ message: 'Пользователь не найден' });
+  }
+  entry.permissions = {
+    ...entry.permissions,
+    ...(req.body?.permissions || {}),
+  };
+  res.json({ user: entry });
+});
+
+// ===============================
+// Phase 7: Notifications
+// ===============================
+app.get('/api/notifications', authMiddleware, (req, res) => {
+  res.json({ notifications: notificationFeed });
+});
+
+app.post('/api/notifications/mark-read', authMiddleware, (req, res) => {
+  const { id } = req.body || {};
+  if (id) {
+    const target = notificationFeed.find((n) => n.id === Number(id));
+    if (target) {
+      target.is_read = true;
+    }
+  } else {
+    notificationFeed.forEach((n) => {
+      n.is_read = true;
+    });
+  }
+
+  res.json({ notifications: notificationFeed });
 });
 
 
