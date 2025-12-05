@@ -1280,6 +1280,8 @@ app.get('/api/directories/:type', authMiddleware, async (req, res, next) => {
 
     const items = rows.map((row) => ({
       id: row.id,
+      created_at: row.created_at,
+      updated_at: row.updated_at,
       ...(row.data ? JSON.parse(row.data) : {}),
     }));
 
@@ -1308,6 +1310,8 @@ app.post('/api/directories/:type', authMiddleware, async (req, res, next) => {
 
     return res.status(201).json({
       id: created.id,
+      created_at: created.created_at,
+      updated_at: created.updated_at,
       ...(created.data ? JSON.parse(created.data) : {}),
     });
   } catch (err) {
@@ -1334,7 +1338,12 @@ app.put('/api/directories/:type/:id', authMiddleware, async (req, res, next) => 
 
     const updated = await knex('directories').where({ id: Number(id) }).first();
 
-    return res.json({ id: updated.id, ...(updated.data ? JSON.parse(updated.data) : {}) });
+    return res.json({
+      id: updated.id,
+      created_at: updated.created_at,
+      updated_at: updated.updated_at,
+      ...(updated.data ? JSON.parse(updated.data) : {}),
+    });
   } catch (err) {
     return next(err);
   }

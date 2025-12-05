@@ -297,11 +297,11 @@ const saving = ref(false);
 const errorMessage = ref('');
 
 const productCategoryOptions = computed(() =>
-  (records.productCategories || []).map((item) => item.name || item.code || `Категория #${item.id}`)
+  (records.productCategories || []).map((item) => item.name || `Категория #${item.id}`)
 );
 
 const materialCategoryOptions = computed(() =>
-  (records.materialCategories || []).map((item) => item.name || item.code || `Категория #${item.id}`)
+  (records.materialCategories || []).map((item) => item.name || `Категория #${item.id}`)
 );
 
 const materialOptions = computed(() =>
@@ -464,38 +464,34 @@ const databaseConfigs = {
     description: 'Группы материалов для фильтров и аналитики.',
     columns: [
       { key: 'name', label: 'Категория' },
-      { key: 'code', label: 'Код' },
       { key: 'default_unit', label: 'Ед. измерения' },
-      { key: 'description', label: 'Описание' },
+      { key: 'properties', label: 'Свойства категории' },
     ],
     fields: [
       { key: 'name', label: 'Название категории', type: 'text', required: true },
-      { key: 'code', label: 'Код', type: 'text', placeholder: 'paper, banner, vinyl' },
       { key: 'default_unit', label: 'Ед. измерения по умолчанию', type: 'text', placeholder: 'лист, м², рулон' },
-      { key: 'description', label: 'Описание', type: 'text', fullWidth: true },
+      { key: 'properties', label: 'Свойства категории', type: 'text', placeholder: 'Ед. измерения, плотность по умолчанию', fullWidth: true },
     ],
-    filterKey: 'code',
-    filterLabel: 'Код категории',
-    searchable: ['name', 'description', 'code'],
+    filterKey: 'name',
+    filterLabel: 'Категория',
+    searchable: ['name', 'properties', 'default_unit'],
   },
   productCategories: {
     title: 'Категории продукции',
     description: 'Структура каталога SKU и типовых характеристик.',
     columns: [
       { key: 'name', label: 'Категория' },
-      { key: 'code', label: 'Код' },
       { key: 'product_type', label: 'Тип продукции' },
       { key: 'description', label: 'Описание' },
     ],
     fields: [
       { key: 'name', label: 'Название категории', type: 'text', required: true },
-      { key: 'code', label: 'Код', type: 'text', placeholder: 'print, textile, souvenir' },
       { key: 'product_type', label: 'Тип продукции', type: 'select', options: ['Полиграфия', 'Наружка', 'Сувениры', 'Другое'], placeholder: 'Выберите тип' },
       { key: 'description', label: 'Описание', type: 'text', fullWidth: true },
     ],
-    filterKey: 'code',
-    filterLabel: 'Код категории',
-    searchable: ['name', 'description', 'code'],
+    filterKey: 'product_type',
+    filterLabel: 'Тип продукции',
+    searchable: ['name', 'description', 'product_type'],
   },
   products: {
     title: 'Продукция (SKU)',
@@ -506,9 +502,10 @@ const databaseConfigs = {
       { key: 'base_format', label: 'Формат' },
       { key: 'material', label: 'Материал' },
       { key: 'tech_card', label: 'Техкарта' },
-      { key: 'pricing_formula', label: 'Формула' },
+      { key: 'pricing_formula', label: 'Формула расчёта' },
+      { key: 'options', label: 'Доп. операции' },
       { key: 'unit_price', label: 'Базовая цена', type: 'currency' },
-      { key: 'tirage', label: 'Тираж', type: 'number' },
+      { key: 'tirage', label: 'Рассчётный тираж', type: 'number' },
       { key: 'discount', label: 'Скидка, %', type: 'number' },
       { key: 'total_price', label: 'Итог', type: 'currency' },
     ],
@@ -518,13 +515,12 @@ const databaseConfigs = {
       { key: 'tech_card', label: 'Техкарта', type: 'select', options: () => techCardOptions.value, placeholder: 'Связать с техкартой' },
       { key: 'material', label: 'Материал по умолчанию', type: 'select', options: () => materialOptions.value, placeholder: 'Выберите материал' },
       { key: 'base_format', label: 'Базовый формат', type: 'text', placeholder: '100x70 мм, A4' },
-      { key: 'standard_tirages', label: 'Стандартные тиражи', type: 'text', placeholder: '100 / 500 / 1000' },
-      { key: 'unit_price', label: 'Цена за единицу, ₽', type: 'text', inputType: 'number', required: true },
-      { key: 'tirage', label: 'Тираж', type: 'text', inputType: 'number', required: true },
+      { key: 'unit_price', label: 'Базовая цена, ₽', type: 'text', inputType: 'number', required: true },
+      { key: 'tirage', label: 'Рассчётный тираж', type: 'text', inputType: 'number', required: true },
       { key: 'discount', label: 'Скидка % (авто)', type: 'text', inputType: 'number', placeholder: 'Заполнится автоматически' },
       { key: 'total_price', label: 'Итог', type: 'text', inputType: 'number', placeholder: 'Автоподсчёт' },
       { key: 'pricing_formula', label: 'Формула расчёта', type: 'select', options: () => pricingFormulaOptions.value, placeholder: 'Выберите формулу' },
-      { key: 'options', label: 'Доп. опции (ламин., вырубка)', type: 'text', fullWidth: true },
+      { key: 'options', label: 'Доп. операции', type: 'text', placeholder: 'Ламинация, биговка', fullWidth: true },
     ],
     filterKey: 'category',
     filterLabel: 'Категория',
@@ -587,15 +583,14 @@ const databaseConfigs = {
     fields: [
       { key: 'name', label: 'Название', type: 'text', required: true },
       { key: 'materials', label: 'Поставляемые материалы', type: 'text', fullWidth: true },
-      { key: 'status', label: 'Статус', type: 'select', options: ['Активный', 'На проверке', 'Остановлен'], required: true },
       { key: 'contact', label: 'Контакты', type: 'text', placeholder: 'E-mail, телефон или менеджер', required: true },
       { key: 'lead_time', label: 'Сроки доставки', type: 'text', placeholder: '2-3 дня, самовывоз' },
       { key: 'prices', label: 'Цены / условия', type: 'text', placeholder: 'Прайс, скидки, предоплата', fullWidth: true },
       { key: 'history', label: 'История закупок', type: 'text', fullWidth: true },
     ],
-    filterKey: 'status',
-    filterLabel: 'Статус',
-    searchable: ['name', 'materials', 'contact'],
+    filterKey: '',
+    filterLabel: '',
+    searchable: ['name', 'materials', 'contact', 'lead_time'],
   },
   users: {
     title: 'Пользователи',
@@ -606,6 +601,7 @@ const databaseConfigs = {
       { key: 'department', label: 'Отдел' },
       { key: 'phone', label: 'Телефон' },
       { key: 'status', label: 'Статус' },
+      { key: 'created_at', label: 'Создан', type: 'date' },
     ],
     fields: [
       { key: 'name', label: 'Имя и фамилия', type: 'text', required: true },
@@ -630,6 +626,7 @@ const databaseConfigs = {
       { key: 'segment', label: 'Тип' },
       { key: 'tags', label: 'Теги' },
       { key: 'source', label: 'Источник' },
+      { key: 'created_at', label: 'Создан', type: 'date' },
     ],
     fields: [
       { key: 'name', label: 'Имя клиента', type: 'text', required: true },
@@ -654,6 +651,7 @@ const databaseConfigs = {
       { key: 'contact_person', label: 'Контакт' },
       { key: 'phone', label: 'Телефон' },
       { key: 'payment_terms', label: 'Оплата' },
+      { key: 'created_at', label: 'Создан', type: 'date' },
     ],
     fields: [
       { key: 'name', label: 'Название', type: 'text', required: true },
@@ -688,8 +686,8 @@ const databaseConfigs = {
     searchable: ['name', 'note', 'lead_type'],
   },
   staffRoles: {
-    title: 'Роли, навыки и должности',
-    description: 'Доступы, навыки и назначение на оборудование.',
+    title: 'Роли и навыки',
+    description: 'Разграничение доступа и навыков для распределения задач.',
     columns: [
       { key: 'name', label: 'Роль/должность' },
       { key: 'permissions', label: 'Разрешения' },
@@ -697,36 +695,52 @@ const databaseConfigs = {
       { key: 'equipment_access', label: 'Оборудование' },
     ],
     fields: [
-      { key: 'name', label: 'Роль или должность', type: 'text', required: true },
-      { key: 'permissions', label: 'Разрешения', type: 'text', placeholder: 'Доступ к кассе/складу/аналитике' },
-      { key: 'skills', label: 'Навыки', type: 'text', placeholder: 'Умеет работать: резак, УФ-принтер', fullWidth: true },
-      { key: 'equipment_access', label: 'Работает на оборудовании', type: 'text', placeholder: 'HP Latex, ламинатор' },
-      { key: 'duties', label: 'Должностные обязанности', type: 'text', fullWidth: true },
+      { key: 'name', label: 'Название роли', type: 'text', required: true },
+      {
+        key: 'permissions',
+        label: 'Разрешения',
+        type: 'text',
+        placeholder: 'Доступ к кассе/складу/аналитике',
+        fullWidth: true,
+      },
+      {
+        key: 'skills',
+        label: 'Навыки',
+        type: 'text',
+        placeholder: 'Умеет работать на: резак, УФ-принтер',
+        fullWidth: true,
+      },
+      {
+        key: 'equipment_access',
+        label: 'Работает на оборудовании',
+        type: 'text',
+        placeholder: 'HP Latex, ламинатор',
+      },
     ],
     filterKey: 'name',
     filterLabel: 'Роль',
-    searchable: ['name', 'skills', 'equipment_access'],
+    searchable: ['name', 'skills', 'permissions'],
   },
   cashShifts: {
     title: 'Кассовые смены',
     description: 'Фиксируйте открытия и закрытия смен с поправками.',
     columns: [
-      { key: 'shift_date', label: 'Дата' },
-      { key: 'cashier', label: 'Ответственный' },
-      { key: 'opening_balance', label: 'Открытие, ₽', type: 'currency' },
-      { key: 'closing_balance', label: 'Закрытие, ₽', type: 'currency' },
-      { key: 'note', label: 'Комментарий' },
+      { key: 'opened_at', label: 'Дата открытия', type: 'date' },
+      { key: 'closed_at', label: 'Дата закрытия', type: 'date' },
+      { key: 'cashier', label: 'Кассир' },
+      { key: 'total_amount', label: 'Итог, ₽', type: 'currency' },
+      { key: 'operations', label: 'Операции' },
     ],
     fields: [
-      { key: 'shift_date', label: 'Дата смены', type: 'text', inputType: 'date', required: true },
+      { key: 'opened_at', label: 'Дата открытия', type: 'text', inputType: 'date', required: true },
+      { key: 'closed_at', label: 'Дата закрытия', type: 'text', inputType: 'date' },
       { key: 'cashier', label: 'Кассир', type: 'text', required: true },
-      { key: 'opening_balance', label: 'Открытие (₽)', type: 'text', inputType: 'number', required: true },
-      { key: 'closing_balance', label: 'Закрытие (₽)', type: 'text', inputType: 'number', required: true },
-      { key: 'note', label: 'Комментарий', type: 'text', fullWidth: true },
+      { key: 'total_amount', label: 'Сумма итога', type: 'text', inputType: 'number' },
+      { key: 'operations', label: 'Операции внутри смены', type: 'text', fullWidth: true },
     ],
     filterKey: 'cashier',
     filterLabel: 'Кассир',
-    searchable: ['cashier', 'note', 'shift_date'],
+    searchable: ['cashier', 'operations', 'opened_at', 'closed_at'],
   },
 };
 
@@ -935,6 +949,11 @@ watch(
 function formatValue(item, column) {
   const value = item[column.key];
   if (value === undefined || value === '') return '—';
+  if (column.type === 'date') {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return value;
+    return date.toLocaleDateString('ru-RU');
+  }
   if (column.type === 'currency') {
     const numberValue = Number(value) || 0;
     return new Intl.NumberFormat('ru-RU', { style: 'currency', currency: 'RUB', maximumFractionDigits: 0 }).format(numberValue);
