@@ -46,6 +46,8 @@
           <button class="btn" type="button" @click="closeModal">Закрыть</button>
         </div>
 
+        <div v-if="errorMessage" class="error-banner">{{ errorMessage }}</div>
+
         <div class="modal-toolbar">
           <label class="search-field">
             <span class="input-label">Поиск</span>
@@ -142,7 +144,8 @@
 </template>
 
 <script setup>
-import { computed, reactive, ref, watch } from 'vue';
+import { computed, onMounted, reactive, ref, watch } from 'vue';
+import axios from 'axios';
 
 const databases = [
   {
@@ -205,6 +208,20 @@ const records = reactive({
   suppliers: [],
   cashShifts: [],
 });
+
+const loading = reactive({
+  users: false,
+  productCategories: false,
+  products: false,
+  clients: false,
+  organizations: false,
+  materials: false,
+  suppliers: false,
+  cashShifts: false,
+});
+
+const saving = ref(false);
+const errorMessage = ref('');
 
 const databaseConfigs = {
   users: {
@@ -405,6 +422,10 @@ const filteredRecords = computed(() => {
     });
 });
 
+onMounted(() => {
+  preloadAll();
+});
+
 function withDerivedFields(item) {
   if (activeDatabase.value === 'products') {
     const tirage = Number(item.tirage) || 0;
@@ -422,6 +443,9 @@ function withDerivedFields(item) {
 
 function openDatabase(key) {
   activeDatabase.value = key;
+  if (!(records[key] || []).length) {
+    fetchRecords(key);
+  }
   resetForm();
   filters[key].search = '';
   filters[key].filter = '';
@@ -470,24 +494,35 @@ function resetForm() {
 
 function deleteRecord(id) {
   if (!activeDatabase.value) return;
-  records[activeDatabase.value] = (records[activeDatabase.value] || []).filter((item) => item.id !== id);
+  axios
+    .delete(`/api/directories/${activeDatabase.value}/${id}`)
+    .then(() => fetchRecords(activeDatabase.value))
+    .catch((err) => {
+      console.error(err);
+      errorMessage.value = err.response?.data?.message || 'Не удалось удалить запись';
+    });
 }
 
 function saveRecord() {
-  if (!activeDatabase.value) return;
+  if (!activeDatabase.value || saving.value) return;
+  saving.value = true;
+  errorMessage.value = '';
   const payload = normalizePayload();
-  if (editingId.value) {
-    records[activeDatabase.value] = (records[activeDatabase.value] || []).map((item) =>
-      item.id === editingId.value ? { ...item, ...payload } : item
-    );
-  } else {
-    const maxId = Math.max(0, ...Object.values(records).flat().map((item) => item.id || 0));
-    records[activeDatabase.value].push({
-      id: maxId + 1,
-      ...payload,
+
+  const request = editingId.value
+    ? axios.put(`/api/directories/${activeDatabase.value}/${editingId.value}`, payload)
+    : axios.post(`/api/directories/${activeDatabase.value}`, payload);
+
+  request
+    .then(() => fetchRecords(activeDatabase.value))
+    .catch((err) => {
+      console.error(err);
+      errorMessage.value = err.response?.data?.message || 'Не удалось сохранить запись';
+    })
+    .finally(() => {
+      saving.value = false;
+      resetForm();
     });
-  }
-  resetForm();
 }
 
 function normalizePayload() {
@@ -513,6 +548,24 @@ function refreshProductTotals() {
   const unitPrice = Number(form.value.unit_price) || 0;
   form.value.discount = autoDiscountForTirage(tirage);
   form.value.total_price = Math.round(tirage * unitPrice * (1 - Number(form.value.discount) / 100));
+}
+
+async function fetchRecords(type) {
+  loading[type] = true;
+  errorMessage.value = '';
+  try {
+    const { data } = await axios.get(`/api/directories/${type}`);
+    records[type] = (data.items || []).map((item) => ({ ...item }));
+  } catch (err) {
+    console.error(err);
+    errorMessage.value = err.response?.data?.message || 'Не удалось загрузить справочник';
+  } finally {
+    loading[type] = false;
+  }
+}
+
+async function preloadAll() {
+  await Promise.all(Object.keys(records).map((key) => fetchRecords(key)));
 }
 
 watch(
@@ -677,6 +730,15 @@ function formatValue(item, column) {
 .modal-subtitle {
   color: #9ca3af;
   font-size: 13px;
+}
+
+.error-banner {
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  color: #fecdd3;
+  padding: 10px 12px;
+  border-radius: 10px;
+  font-size: 14px;
 }
 
 .modal-toolbar {
