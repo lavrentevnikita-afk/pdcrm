@@ -194,8 +194,10 @@ const DIRECTORY_TYPES = new Set([
   'clients',
   'organizations',
   'materials',
+  'materialCategories',
   'suppliers',
   'cashShifts',
+  'postpress',
 ]);
 
 // Basic middlewares

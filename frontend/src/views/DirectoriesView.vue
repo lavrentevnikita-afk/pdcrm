@@ -124,8 +124,8 @@
               v-model="form[field.key]"
               :required="field.required"
             >
-              <option value="" disabled>Выберите</option>
-              <option v-for="option in field.options" :key="option" :value="option">
+              <option value="" disabled>{{ field.placeholder || 'Выберите' }}</option>
+              <option v-for="option in getFieldOptions(field)" :key="option" :value="option">
                 {{ option }}
               </option>
             </select>
@@ -167,6 +167,12 @@ const databases = [
     tags: ['SKU', 'Цены', 'Тираж'],
   },
   {
+    key: 'materialCategories',
+    title: 'Категории материалов',
+    description: 'Группы материалов для связки со справочником «Материалы».',
+    tags: ['Материалы', 'Категории'],
+  },
+  {
     key: 'clients',
     title: 'Клиенты',
     description: 'Карточки клиентов для быстрого выбора в заказе.',
@@ -191,6 +197,12 @@ const databases = [
     tags: ['Контракты', 'Согласования'],
   },
   {
+    key: 'postpress',
+    title: 'Постпечатка',
+    description: 'Послепечатные операции и настройки оборудования.',
+    tags: ['Финишинг', 'Производство'],
+  },
+  {
     key: 'cashShifts',
     title: 'Кассовые смены',
     description: 'История смен с возможностью корректировать записи.',
@@ -202,10 +214,12 @@ const records = reactive({
   users: [],
   productCategories: [],
   products: [],
+  materialCategories: [],
   clients: [],
   organizations: [],
   materials: [],
   suppliers: [],
+  postpress: [],
   cashShifts: [],
 });
 
@@ -213,15 +227,25 @@ const loading = reactive({
   users: false,
   productCategories: false,
   products: false,
+  materialCategories: false,
   clients: false,
   organizations: false,
   materials: false,
   suppliers: false,
+  postpress: false,
   cashShifts: false,
 });
 
 const saving = ref(false);
 const errorMessage = ref('');
+
+const productCategoryOptions = computed(() =>
+  (records.productCategories || []).map((item) => item.name || item.code || `Категория #${item.id}`)
+);
+
+const materialCategoryOptions = computed(() =>
+  (records.materialCategories || []).map((item) => item.name || item.code || `Категория #${item.id}`)
+);
 
 const databaseConfigs = {
   users: {
@@ -260,6 +284,23 @@ const databaseConfigs = {
     filterLabel: 'Код категории',
     searchable: ['name', 'description', 'code'],
   },
+  materialCategories: {
+    title: 'Категории материалов',
+    description: 'Справочник групп материалов для фильтров и карточек.',
+    columns: [
+      { key: 'name', label: 'Категория' },
+      { key: 'code', label: 'Код' },
+      { key: 'description', label: 'Описание' },
+    ],
+    fields: [
+      { key: 'name', label: 'Название категории', type: 'text', required: true },
+      { key: 'code', label: 'Код', type: 'text', placeholder: 'paper, banner, vinyl' },
+      { key: 'description', label: 'Описание', type: 'text', fullWidth: true },
+    ],
+    filterKey: 'code',
+    filterLabel: 'Код категории',
+    searchable: ['name', 'description', 'code'],
+  },
   products: {
     title: 'Продукция с ценами',
     description: 'Позиции каталога с тиражом, ценой и автоскидкой.',
@@ -273,7 +314,14 @@ const databaseConfigs = {
     ],
     fields: [
       { key: 'name', label: 'Название', type: 'text', placeholder: 'Например, «Визитки премиум»', required: true },
-      { key: 'category', label: 'Категория', type: 'select', options: ['Печать', 'Текстиль', 'Сувениры', 'Керамика', 'Другое'], required: true },
+      {
+        key: 'category',
+        label: 'Категория',
+        type: 'select',
+        options: () => productCategoryOptions.value,
+        placeholder: 'Выберите из справочника категорий',
+        required: true,
+      },
       { key: 'unit_price', label: 'Цена за единицу, ₽', type: 'text', inputType: 'number', required: true },
       { key: 'tirage', label: 'Тираж', type: 'text', inputType: 'number', required: true },
       { key: 'discount', label: 'Скидка % (авто)', type: 'text', inputType: 'number', placeholder: 'Заполнится автоматически' },
@@ -327,19 +375,28 @@ const databaseConfigs = {
     description: 'Управляйте типами материалов, единицами и статусом использования.',
     columns: [
       { key: 'name', label: 'Материал' },
+      { key: 'category', label: 'Категория' },
       { key: 'type', label: 'Тип' },
       { key: 'unit', label: 'Ед.' },
       { key: 'note', label: 'Комментарий' },
     ],
     fields: [
       { key: 'name', label: 'Название', type: 'text', required: true },
+      {
+        key: 'category',
+        label: 'Категория материала',
+        type: 'select',
+        options: () => materialCategoryOptions.value,
+        placeholder: 'Выберите категорию из справочника',
+        required: true,
+      },
       { key: 'type', label: 'Тип', type: 'select', options: ['Бумага', 'Пленка', 'Баннер', 'Краска', 'Другое'], required: true },
       { key: 'unit', label: 'Единица измерения', type: 'text', placeholder: 'лист, м², рулон' },
       { key: 'note', label: 'Комментарий', type: 'text', placeholder: 'Формат, плотность, цвет', fullWidth: true },
     ],
-    filterKey: 'type',
-    filterLabel: 'Тип материала',
-    searchable: ['name', 'note', 'type'],
+    filterKey: 'category',
+    filterLabel: 'Категория',
+    searchable: ['name', 'note', 'type', 'category'],
   },
   suppliers: {
     title: 'Поставщики',
@@ -359,6 +416,27 @@ const databaseConfigs = {
     filterKey: 'status',
     filterLabel: 'Статус',
     searchable: ['name', 'note', 'contact'],
+  },
+  postpress: {
+    title: 'Постпечатка',
+    description: 'Справочник послепечатных операций и параметров настройки.',
+    columns: [
+      { key: 'name', label: 'Операция' },
+      { key: 'equipment', label: 'Оборудование' },
+      { key: 'unit', label: 'Ед.' },
+      { key: 'setup_time', label: 'Подготовка, мин' },
+      { key: 'note', label: 'Комментарий' },
+    ],
+    fields: [
+      { key: 'name', label: 'Название операции', type: 'text', required: true },
+      { key: 'equipment', label: 'Оборудование', type: 'text', placeholder: 'Ламинатор, биговщик и т.д.' },
+      { key: 'unit', label: 'Единица', type: 'text', placeholder: 'лист, пог. м, услуга' },
+      { key: 'setup_time', label: 'Время подготовки, мин', type: 'text', inputType: 'number' },
+      { key: 'note', label: 'Комментарий', type: 'text', fullWidth: true },
+    ],
+    filterKey: 'equipment',
+    filterLabel: 'Оборудование',
+    searchable: ['name', 'equipment', 'note'],
   },
   cashShifts: {
     title: 'Кассовые смены',
@@ -548,6 +626,14 @@ function refreshProductTotals() {
   const unitPrice = Number(form.value.unit_price) || 0;
   form.value.discount = autoDiscountForTirage(tirage);
   form.value.total_price = Math.round(tirage * unitPrice * (1 - Number(form.value.discount) / 100));
+}
+
+function getFieldOptions(field) {
+  if (!field.options) return [];
+  if (typeof field.options === 'function') {
+    return field.options() || [];
+  }
+  return field.options;
 }
 
 async function fetchRecords(type) {
