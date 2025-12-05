@@ -9,85 +9,68 @@
       </div>
 
       <div class="page-actions">
-        <button type="button" class="btn-secondary" @click="reloadAll">
+        <AppButton variant="secondary" @click="reloadAll">
           Обновить
-        </button>
+        </AppButton>
       </div>
     </div>
 
     <div class="cash-layout">
       <div class="cash-main">
         <!-- Фильтры -->
-        <div class="cash-filters-card">
+        <AppCard title="Фильтры" subtitle="Сузьте выбор заказов для оплаты">
           <div class="cash-filters">
             <div class="cash-filters-group">
-              <label class="cash-filter-label">
-                Телефон клиента
-                <input
-                  v-model="filters.clientPhone"
-                  type="text"
-                  placeholder="+7 900..."
-                  class="cash-filter-input"
-                />
-              </label>
+              <AppInput
+                v-model="filters.clientPhone"
+                label="Телефон клиента"
+                placeholder="+7 (900) 000-00-00"
+                mask="phone"
+                hint="Поддерживается автоподстановка формата"
+              />
             </div>
 
             <div class="cash-filters-group cash-filters-dates">
-              <label class="cash-filter-label">
-                Дата исполнения от
-                <input
-                  v-model="filters.dateFrom"
-                  type="date"
-                  class="cash-filter-input"
-                />
-              </label>
-              <label class="cash-filter-label">
-                Дата исполнения до
-                <input
-                  v-model="filters.dateTo"
-                  type="date"
-                  class="cash-filter-input"
-                />
-              </label>
+              <AppInput
+                v-model="filters.dateFrom"
+                label="Дата исполнения от"
+                type="date"
+              />
+              <AppInput
+                v-model="filters.dateTo"
+                label="Дата исполнения до"
+                type="date"
+              />
             </div>
 
             <div class="cash-filters-group">
-              <label class="cash-filter-label">
-                Статус оплаты
-                <select v-model="filters.paymentStatus" class="cash-filter-input">
-                  <option value="open">Неоплаченные и частичные</option>
-                  <option value="unpaid">Только неоплаченные</option>
-                  <option value="partial">Только частично оплаченные</option>
-                  <option value="paid">Только оплаченные</option>
-                  <option value="all">Все статусы</option>
-                </select>
-              </label>
+              <AppSelect v-model="filters.paymentStatus" label="Статус оплаты">
+                <option value="open">Неоплаченные и частичные</option>
+                <option value="unpaid">Только неоплаченные</option>
+                <option value="partial">Только частично оплаченные</option>
+                <option value="paid">Только оплаченные</option>
+                <option value="all">Все статусы</option>
+              </AppSelect>
             </div>
 
             <div class="cash-filters-actions">
-              <button type="button" class="btn-secondary" @click="resetFilters">
+              <AppButton variant="secondary" @click="resetFilters">
                 Сбросить
-              </button>
-              <button type="button" class="btn-primary" @click="applyFilters">
-                Применить
-              </button>
+              </AppButton>
+              <AppButton @click="applyFilters">Применить</AppButton>
             </div>
           </div>
-        </div>
+        </AppCard>
 
         <!-- Таблица заказов -->
-        <div class="cash-card">
-          <div class="cash-card-header">
-            <div>
-              <div class="cash-card-title">Заказы к оплате</div>
-              <div class="cash-card-subtitle">
-                {{ orders.length }} {{ orders.length === 1 ? 'заказ' : 'заказов' }}
-              </div>
+        <AppCard
+          title="Заказы к оплате"
+          :subtitle="`${orders.length} ${orders.length === 1 ? 'заказ' : 'заказов'}`"
+        >
+          <div v-if="loading" class="cash-table-skeleton">
+            <div v-for="i in 4" :key="i" class="cash-table-skeleton-row">
+              <AppSkeleton height="38px" radius="12px" />
             </div>
-          </div>
-
-          <div v-if="loading" class="page-loading">
-            Загрузка заказов…
           </div>
           <div v-else-if="error" class="page-error">
             {{ error }}
@@ -151,31 +134,26 @@
                     </span>
                   </td>
                   <td class="cash-col-actions">
-                    <button
-                      type="button"
-                      class="btn-primary btn-sm"
+                    <AppButton
+                      size="sm"
                       :disabled="order.remaining_amount <= 0 || paying"
                       @click="openPaymentModal(order)"
                     >
                       Оплатить
-                    </button>
+                    </AppButton>
                   </td>
                 </tr>
               </tbody>
             </table>
           </div>
-        </div>
+        </AppCard>
       </div>
 
       <!-- Боковая панель -->
       <aside class="cash-sidebar">
-        <div class="cash-card">
-          <div class="cash-card-header">
-            <div class="cash-card-title">Итоги кассы</div>
-          </div>
-
+        <AppCard title="Итоги кассы">
           <div v-if="shiftLoading" class="page-loading">
-            Загрузка данных по смене…
+            <AppSkeleton height="20px" />
           </div>
           <div v-else>
             <div v-if="shiftError" class="page-error">{{ shiftError }}</div>
@@ -192,15 +170,14 @@
                 </span>
               </div>
               <div class="cash-summary-actions">
-                <button
-                  type="button"
-                  class="btn-secondary"
-                  :disabled="shiftActionLoading"
+                <AppButton
+                  variant="secondary"
+                  :loading="shiftActionLoading"
                   @click="closeShift"
                 >
                   <span v-if="shiftActionLoading">Закрываем смену…</span>
                   <span v-else>Закрыть смену</span>
-                </button>
+                </AppButton>
               </div>
             </div>
 
@@ -210,113 +187,85 @@
                 но не попадут в статистику смены.
               </div>
               <div class="cash-summary-actions">
-                <button
-                  type="button"
-                  class="btn-primary"
-                  :disabled="shiftActionLoading"
-                  @click="openShift"
-                >
+                <AppButton :loading="shiftActionLoading" @click="openShift">
                   <span v-if="shiftActionLoading">Открываем смену…</span>
                   <span v-else>Открыть смену</span>
-                </button>
+                </AppButton>
               </div>
             </div>
           </div>
-        </div>
+        </AppCard>
       </aside>
     </div>
 
     <!-- Модалка оплаты -->
-    <div
+    <AppModal
       v-if="isPaymentModalOpen"
-      class="cash-modal-backdrop"
-      @click.self="closePaymentModal"
+      title="Оплата заказа"
+      subtitle="Проверьте сумму и подтвердите проведение оплаты"
+      @close="closePaymentModal"
     >
-      <div class="cash-modal">
-        <div class="cash-modal-header">
-          <div class="cash-modal-title">Оплата заказа</div>
-          <button type="button" class="cash-modal-close" @click="closePaymentModal">
-            ×
-          </button>
+      <div v-if="selectedOrder" class="cash-modal-order">
+        <div class="cash-modal-order-number">
+          #{{ selectedOrder.order_number }}
         </div>
-
-        <div v-if="selectedOrder" class="cash-modal-body">
-          <div class="cash-modal-order">
-            <div class="cash-modal-order-number">
-              #{{ selectedOrder.order_number }}
-            </div>
-            <div class="cash-modal-order-title">
-              {{ selectedOrder.title || 'Без названия' }}
-            </div>
-            <div class="cash-modal-order-client">
-              <span v-if="selectedOrder.client_name">
-                {{ selectedOrder.client_name }}
-              </span>
-              <span v-if="selectedOrder.client_phone">
-                · {{ selectedOrder.client_phone }}
-              </span>
-            </div>
-            <div class="cash-modal-order-money">
-              <span>К оплате по заказу: {{ formatMoney(selectedOrder.sum_total) }}</span>
-              <span>Уже оплачено: {{ formatMoney(selectedOrder.paid_amount) }}</span>
-              <span>Остаток: {{ formatMoney(selectedOrder.remaining_amount) }}</span>
-            </div>
-          </div>
-
-          <div class="cash-modal-form">
-            <label class="cash-modal-label">
-              Сумма к оплате
-              <input
-                v-model="paymentAmount"
-                type="number"
-                min="0"
-                step="0.01"
-                class="cash-modal-input"
-              />
-            </label>
-
-            <label class="cash-modal-label">
-              Способ оплаты
-              <select v-model="paymentMethod" class="cash-modal-input">
-                <option value="cash">Наличные</option>
-                <option value="card">Банковская карта</option>
-                <option value="bank">Безналичный расчёт</option>
-              </select>
-            </label>
-          </div>
-
-          <div v-if="paymentError" class="cash-modal-error">
-            {{ paymentError }}
-          </div>
-
-          <div class="cash-modal-footer">
-            <button type="button" class="btn-secondary" @click="closePaymentModal">
-              Отмена
-            </button>
-            <button
-              type="button"
-              class="btn-primary"
-              :disabled="paying"
-              @click="submitPayment"
-            >
-              <span v-if="paying">Проведение…</span>
-              <span v-else>Провести оплату</span>
-            </button>
-          </div>
+        <div class="cash-modal-order-title">
+          {{ selectedOrder.title || 'Без названия' }}
+        </div>
+        <div class="cash-modal-order-client">
+          <span v-if="selectedOrder.client_name">
+            {{ selectedOrder.client_name }}
+          </span>
+          <span v-if="selectedOrder.client_phone">· {{ selectedOrder.client_phone }}</span>
+        </div>
+        <div class="cash-modal-order-money">
+          <span>К оплате по заказу: {{ formatMoney(selectedOrder.sum_total) }}</span>
+          <span>Уже оплачено: {{ formatMoney(selectedOrder.paid_amount) }}</span>
+          <span>Остаток: {{ formatMoney(selectedOrder.remaining_amount) }}</span>
         </div>
       </div>
-    </div>
+
+      <div class="cash-modal-form">
+        <AppInput
+          v-model="paymentAmount"
+          type="number"
+          label="Сумма к оплате"
+          min="0"
+          step="0.01"
+          :error="paymentError"
+        />
+        <AppSelect v-model="paymentMethod" label="Способ оплаты">
+          <option value="cash">Наличные</option>
+          <option value="card">Банковская карта</option>
+          <option value="bank">Безналичный расчёт</option>
+        </AppSelect>
+      </div>
+
+      <template #footer>
+        <AppButton variant="secondary" @click="closePaymentModal">Отмена</AppButton>
+        <AppButton :loading="paying" @click="submitPayment">
+          <span v-if="paying">Проведение…</span>
+          <span v-else>Провести оплату</span>
+        </AppButton>
+      </template>
+    </AppModal>
 
     <!-- Тост -->
-    <div v-if="toastVisible" class="cash-toast" :class="'cash-toast--' + toastType">
-      {{ toastMessage }}
-    </div>
+    <AppToast :visible="toastVisible" :type="toastType" :message="toastMessage" />
   </div>
 </template>
 
 <script setup>
 import { onMounted, reactive, ref } from 'vue';
 import axios from 'axios';
+
+import AppButton from '../components/ui/AppButton.vue';
+import AppCard from '../components/ui/AppCard.vue';
+import AppInput from '../components/ui/AppInput.vue';
+import AppModal from '../components/ui/AppModal.vue';
+import AppSelect from '../components/ui/AppSelect.vue';
+import AppSkeleton from '../components/ui/AppSkeleton.vue';
+import AppToast from '../components/ui/AppToast.vue';
 
 const orders = ref([]);
 const loading = ref(false);
@@ -660,6 +609,16 @@ onMounted(() => {
 .cash-card-subtitle {
   font-size: 12px;
   color: var(--color-text-muted);
+}
+
+.cash-table-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.cash-table-skeleton-row {
+  width: 100%;
 }
 
 .cash-table-wrapper {
