@@ -11,181 +11,19 @@ const knexConfig = require('../knexfile')[process.env.NODE_ENV || 'development']
 const app = express();
 const knex = knexLib(knexConfig);
 
+async function ensureSchemaPatches() {
+  const hasSku = await knex.schema.hasColumn('products', 'sku');
+  if (!hasSku) {
+    await knex.schema.table('products', (table) => {
+      table.string('sku');
+    });
+  }
+}
+
 const { calculateOrderItemPrice, recalculateOrderTotals } = require('./orders.service');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-me';
 const JWT_EXPIRES_IN = '7d';
-
-// Demo in-memory datasets for phase 7 modules
-const warehouseItems = [
-  {
-    id: 1,
-    name: 'Мелованная бумага 300 г/м²',
-    unit: 'лист',
-    stock: 850,
-    reorder_level: 300,
-    supplier: 'Поставщик А',
-    last_movement_at: new Date().toISOString(),
-  },
-  {
-    id: 2,
-    name: 'Бумага офисная A4',
-    unit: 'пачка',
-    stock: 42,
-    reorder_level: 40,
-    supplier: 'БумагаПро',
-    last_movement_at: new Date().toISOString(),
-  },
-  {
-    id: 3,
-    name: 'Баннерная ткань 440 г/м²',
-    unit: 'м²',
-    stock: 120,
-    reorder_level: 80,
-    supplier: 'Outdoor Print',
-    last_movement_at: new Date().toISOString(),
-  },
-  {
-    id: 4,
-    name: 'Пластик ПВХ 3 мм',
-    unit: 'лист',
-    stock: 25,
-    reorder_level: 30,
-    supplier: 'ПластМаркет',
-    last_movement_at: new Date().toISOString(),
-  },
-];
-
-const warehouseMovements = [
-  {
-    id: 1,
-    item_id: 1,
-    type: 'out',
-    quantity: 50,
-    note: 'Тираж визиток',
-    created_at: new Date().toISOString(),
-  },
-  {
-    id: 2,
-    item_id: 2,
-    type: 'in',
-    quantity: 20,
-    note: 'Поставка от БумагаПро',
-    created_at: new Date().toISOString(),
-  },
-];
-
-const purchaseRequests = [
-  {
-    id: 1,
-    material: 'Пластик ПВХ 3 мм',
-    quantity: 50,
-    status: 'pending',
-    requested_by: 'Анна Шахова',
-    created_at: new Date().toISOString(),
-  },
-  {
-    id: 2,
-    material: 'Баннерная ткань 440 г/м²',
-    quantity: 100,
-    status: 'approved',
-    requested_by: 'Дмитрий Павлов',
-    created_at: new Date().toISOString(),
-  },
-];
-
-const staffMembers = [
-  {
-    id: 1,
-    name: 'Анна Шахова',
-    role: 'Дизайнер',
-    department: 'Дизайн',
-    phone: '+7 999 123-45-67',
-    email: 'anna@pdcrm.local',
-    workload: 4,
-  },
-  {
-    id: 2,
-    name: 'Дмитрий Павлов',
-    role: 'Производство',
-    department: 'Цех',
-    phone: '+7 912 555-33-22',
-    email: 'd.pavlov@pdcrm.local',
-    workload: 7,
-  },
-  {
-    id: 3,
-    name: 'Мария Белова',
-    role: 'Менеджер',
-    department: 'Отдел продаж',
-    phone: '+7 921 777-11-00',
-    email: 'm.belova@pdcrm.local',
-    workload: 3,
-  },
-];
-
-const permissionMatrix = [
-  {
-    id: 1,
-    name: 'Анна Шахова',
-    role: 'designer',
-    permissions: {
-      orders: true,
-      production: false,
-      cashbox: false,
-      analytics: true,
-      warehouse: true,
-    },
-  },
-  {
-    id: 2,
-    name: 'Дмитрий Павлов',
-    role: 'production',
-    permissions: {
-      orders: true,
-      production: true,
-      cashbox: false,
-      analytics: false,
-      warehouse: true,
-    },
-  },
-  {
-    id: 3,
-    name: 'Мария Белова',
-    role: 'manager',
-    permissions: {
-      orders: true,
-      production: false,
-      cashbox: true,
-      analytics: true,
-      warehouse: false,
-    },
-  },
-];
-
-const notificationFeed = [
-  {
-    id: 1,
-    title: 'Новый заказ #2405',
-    message: 'Поступил запрос на 500 листовок. Срок — 2 дня.',
-    is_read: false,
-    created_at: new Date().toISOString(),
-  },
-  {
-    id: 2,
-    title: 'Низкий остаток: Пластик ПВХ 3 мм',
-    message: 'Остаток 25 листов, требуется докупить.',
-    is_read: false,
-    created_at: new Date().toISOString(),
-  },
-  {
-    id: 3,
-    title: 'Оплата по заказу #2330',
-    message: 'Поступила частичная оплата 18 500 ₽.',
-    is_read: true,
-    created_at: new Date().toISOString(),
-  },
-];
 
 // Basic middlewares
 app.use(cors());
@@ -222,6 +60,147 @@ function authMiddleware(req, res, next) {
     console.error('JWT verify error', err);
     return res.status(401).json({ message: 'Сессия истекла, войдите снова' });
   }
+}
+
+async function ensureCategoryId(name) {
+  if (!name) return null;
+
+  const existing = await knex('product_categories')
+    .whereRaw('lower(name) = ?', [name.toLowerCase()])
+    .first();
+
+  if (existing) return existing.id;
+
+  const [inserted] = await knex('product_categories')
+    .insert({ name, slug: name.toLowerCase().replace(/\s+/g, '-') })
+    .returning('id');
+
+  return inserted?.id || inserted;
+}
+
+async function mapDirectoryRecord(type, row) {
+  if (!row) return null;
+
+  if (type === 'products') {
+    return {
+      id: row.id,
+      name: row.name,
+      category: row.category_name || null,
+      sku: row.sku || null,
+      note: row.comment || null,
+    };
+  }
+
+  if (type === 'clients') {
+    return {
+      id: row.id,
+      name: row.name,
+      segment: row.segment || null,
+      contact: row.contact || null,
+      note: row.note || null,
+    };
+  }
+
+  if (type === 'materials') {
+    return {
+      id: row.id,
+      name: row.name,
+      type: row.type || null,
+      unit: row.unit || null,
+      note: row.note || null,
+    };
+  }
+
+  if (type === 'suppliers') {
+    return {
+      id: row.id,
+      name: row.name,
+      status: row.status || null,
+      contact: row.contact || null,
+      note: row.note || null,
+    };
+  }
+
+  return row;
+}
+
+async function listDirectory(type) {
+  if (type === 'products') {
+    const rows = await knex('products as p')
+      .leftJoin('product_categories as c', 'p.category_id', 'c.id')
+      .select('p.*', 'c.name as category_name');
+    const categories = await knex('product_categories').select('name');
+    return {
+      records: rows.map((row) => mapDirectoryRecord(type, row)),
+      meta: { categories: categories.map((c) => c.name) },
+    };
+  }
+
+  if (type === 'clients') {
+    const rows = await knex('clients');
+    return { records: rows.map((row) => mapDirectoryRecord(type, row)) };
+  }
+
+  if (type === 'materials') {
+    const rows = await knex('materials');
+    return { records: rows.map((row) => mapDirectoryRecord(type, row)) };
+  }
+
+  if (type === 'suppliers') {
+    const rows = await knex('suppliers');
+    return { records: rows.map((row) => mapDirectoryRecord(type, row)) };
+  }
+
+  throw new Error('Unknown directory');
+}
+
+async function prepareDirectoryPayload(type, payload) {
+  if (type === 'products') {
+    const categoryId = await ensureCategoryId(payload.category);
+    return {
+      name: payload.name,
+      category_id: categoryId,
+      sku: payload.sku || null,
+      comment: payload.note || null,
+    };
+  }
+
+  if (type === 'clients') {
+    return {
+      name: payload.name,
+      segment: payload.segment || null,
+      contact: payload.contact || null,
+      note: payload.note || null,
+    };
+  }
+
+  if (type === 'materials') {
+    return {
+      name: payload.name,
+      type: payload.type || null,
+      unit: payload.unit || null,
+      note: payload.note || null,
+    };
+  }
+
+  if (type === 'suppliers') {
+    return {
+      name: payload.name,
+      status: payload.status || null,
+      contact: payload.contact || null,
+      note: payload.note || null,
+    };
+  }
+
+  throw new Error('Unknown directory');
+}
+
+function directoryTable(type) {
+  if (type === 'products') return 'products';
+  if (type === 'clients') return 'clients';
+  if (type === 'materials') return 'materials';
+  if (type === 'suppliers') return 'suppliers';
+  throw new Error('Unknown directory');
 }
 
 // Healthcheck route
@@ -1323,104 +1302,215 @@ app.post('/api/cash/shift/close', authMiddleware, async (req, res, next) => {
 });
 
 // ===============================
+// Phase 7: Directories
+// ===============================
+app.get('/api/directories/:type', authMiddleware, async (req, res, next) => {
+  try {
+    const { type } = req.params;
+    const { records, meta } = await listDirectory(type);
+    res.json({ records, meta });
+  } catch (err) {
+    next(err);
+  }
+});
+
+app.post('/api/directories/:type', authMiddleware, async (req, res, next) => {
+  try {
+    const { type } = req.params;
+    const payload = req.body || {};
+
+    if (!payload.name) {
+      return res.status(400).json({ message: 'Название обязательно' });
+    }
+
+    const data = await prepareDirectoryPayload(type, payload);
+    const table = directoryTable(type);
+    const [id] = await knex(table).insert(data).returning('id');
+    const createdId = id?.id || id;
+    const { records, meta } = await listDirectory(type);
+    const created = records.find((r) => r.id === createdId);
+    res.status(201).json({ record: created, meta });
+  } catch (err) {
+    next(err);
+  }
+});
+
+app.put('/api/directories/:type/:id', authMiddleware, async (req, res, next) => {
+  try {
+    const { type, id } = req.params;
+    const payload = req.body || {};
+    const table = directoryTable(type);
+
+    const exists = await knex(table).where({ id }).first();
+    if (!exists) {
+      return res.status(404).json({ message: 'Запись не найдена' });
+    }
+
+    const data = await prepareDirectoryPayload(type, { ...exists, ...payload });
+    await knex(table).where({ id }).update(data);
+
+    const { records, meta } = await listDirectory(type);
+    const updated = records.find((r) => r.id === Number(id));
+    res.json({ record: updated, meta });
+  } catch (err) {
+    next(err);
+  }
+});
+
+app.delete('/api/directories/:type/:id', authMiddleware, async (req, res, next) => {
+  try {
+    const { type, id } = req.params;
+    const table = directoryTable(type);
+
+    await knex(table).where({ id }).del();
+    const { records, meta } = await listDirectory(type);
+    res.json({ records, meta });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ===============================
 // Phase 7: Warehouse & Purchase
 // ===============================
-app.get('/api/warehouse/items', authMiddleware, (req, res) => {
-  const enriched = warehouseItems.map((item) => ({
-    ...item,
-    low_stock: item.stock <= item.reorder_level,
-  }));
-  res.json({ items: enriched });
+app.get('/api/warehouse/items', authMiddleware, async (req, res, next) => {
+  try {
+    const items = await knex('warehouse_items');
+    const enriched = items.map((item) => ({
+      ...item,
+      low_stock: item.stock <= item.reorder_level,
+    }));
+    res.json({ items: enriched });
+  } catch (err) {
+    next(err);
+  }
 });
 
-app.post('/api/warehouse/items', authMiddleware, (req, res) => {
-  const { name, unit, stock, reorder_level, supplier } = req.body || {};
-  if (!name) {
-    return res.status(400).json({ message: 'Название материала обязательно' });
+app.post('/api/warehouse/items', authMiddleware, async (req, res, next) => {
+  try {
+    const { name, unit, stock, reorder_level, supplier } = req.body || {};
+    if (!name) {
+      return res.status(400).json({ message: 'Название материала обязательно' });
+    }
+
+    const [id] = await knex('warehouse_items')
+      .insert({
+        name,
+        unit: unit || 'шт',
+        stock: Number(stock) || 0,
+        reorder_level: Number(reorder_level) || 0,
+        supplier: supplier || '—',
+        last_movement_at: new Date().toISOString(),
+      })
+      .returning('id');
+
+    const createdId = id?.id || id;
+    const item = await knex('warehouse_items').where({ id: createdId }).first();
+    res
+      .status(201)
+      .json({ item: { ...item, low_stock: item.stock <= item.reorder_level } });
+  } catch (err) {
+    next(err);
   }
-
-  const nextId = Math.max(...warehouseItems.map((i) => i.id)) + 1;
-  const newItem = {
-    id: nextId,
-    name,
-    unit: unit || 'шт',
-    stock: Number(stock) || 0,
-    reorder_level: Number(reorder_level) || 0,
-    supplier: supplier || '—',
-    last_movement_at: new Date().toISOString(),
-  };
-
-  warehouseItems.push(newItem);
-  return res.status(201).json({ item: newItem });
 });
 
-app.post('/api/warehouse/movements', authMiddleware, (req, res) => {
-  const { item_id, type, quantity, note } = req.body || {};
-  const item = warehouseItems.find((i) => i.id === Number(item_id));
+app.post('/api/warehouse/movements', authMiddleware, async (req, res, next) => {
+  try {
+    const { item_id, type, quantity, note } = req.body || {};
+    const item = await knex('warehouse_items').where({ id: item_id }).first();
 
-  if (!item) {
-    return res.status(404).json({ message: 'Материал не найден' });
+    if (!item) {
+      return res.status(404).json({ message: 'Материал не найден' });
+    }
+    if (!['in', 'out'].includes(type)) {
+      return res.status(400).json({ message: 'Неверный тип движения' });
+    }
+    const qty = Number(quantity);
+    if (Number.isNaN(qty) || qty <= 0) {
+      return res.status(400).json({ message: 'Количество должно быть больше нуля' });
+    }
+
+    if (type === 'out' && item.stock - qty < 0) {
+      return res.status(400).json({ message: 'Недостаточно остатка' });
+    }
+
+    const now = new Date().toISOString();
+
+    await knex.transaction(async (trx) => {
+      await trx('warehouse_items')
+        .where({ id: item.id })
+        .update({
+          stock: type === 'in' ? item.stock + qty : item.stock - qty,
+          last_movement_at: now,
+        });
+
+      await trx('warehouse_movements').insert({
+        item_id: item.id,
+        type,
+        quantity: qty,
+        note: note || '',
+        created_at: now,
+      });
+    });
+
+    const updated = await knex('warehouse_items').where({ id: item.id }).first();
+
+    return res.status(201).json({
+      item: {
+        ...updated,
+        low_stock: updated.stock <= updated.reorder_level,
+      },
+    });
+  } catch (err) {
+    next(err);
   }
-  if (!['in', 'out'].includes(type)) {
-    return res.status(400).json({ message: 'Неверный тип движения' });
-  }
-  const qty = Number(quantity);
-  if (Number.isNaN(qty) || qty <= 0) {
-    return res.status(400).json({ message: 'Количество должно быть больше нуля' });
-  }
-
-  if (type === 'out' && item.stock - qty < 0) {
-    return res.status(400).json({ message: 'Недостаточно остатка' });
-  }
-
-  item.stock += type === 'in' ? qty : -qty;
-  item.last_movement_at = new Date().toISOString();
-
-  const nextId = warehouseMovements.length
-    ? Math.max(...warehouseMovements.map((m) => m.id)) + 1
-    : 1;
-  const movement = {
-    id: nextId,
-    item_id: item.id,
-    type,
-    quantity: qty,
-    note: note || '',
-    created_at: new Date().toISOString(),
-  };
-  warehouseMovements.push(movement);
-
-  return res.status(201).json({ item, movement });
 });
 
-app.get('/api/warehouse/purchase-requests', authMiddleware, (req, res) => {
-  res.json({ requests: purchaseRequests });
+app.get('/api/warehouse/purchase-requests', authMiddleware, async (req, res, next) => {
+  try {
+    const requests = await knex('purchase_requests').orderBy('created_at', 'desc');
+    res.json({ requests });
+  } catch (err) {
+    next(err);
+  }
 });
 
-app.post('/api/warehouse/purchase-requests', authMiddleware, (req, res) => {
-  const { material, quantity } = req.body || {};
-  if (!material) {
-    return res.status(400).json({ message: 'Материал обязателен' });
+app.post('/api/warehouse/purchase-requests', authMiddleware, async (req, res, next) => {
+  try {
+    const { material, quantity } = req.body || {};
+    if (!material) {
+      return res.status(400).json({ message: 'Материал обязателен' });
+    }
+    const [id] = await knex('purchase_requests')
+      .insert({
+        material,
+        quantity: Number(quantity) || 0,
+        status: 'pending',
+        requested_by: req.user?.name || 'Неизвестно',
+        created_at: new Date().toISOString(),
+      })
+      .returning('id');
+
+    const createdId = id?.id || id;
+    const request = await knex('purchase_requests').where({ id: createdId }).first();
+    return res.status(201).json({ request });
+  } catch (err) {
+    next(err);
   }
-  const nextId = purchaseRequests.length
-    ? Math.max(...purchaseRequests.map((r) => r.id)) + 1
-    : 1;
-  const request = {
-    id: nextId,
-    material,
-    quantity: Number(quantity) || 0,
-    status: 'pending',
-    requested_by: req.user?.name || 'Неизвестно',
-    created_at: new Date().toISOString(),
-  };
-  purchaseRequests.push(request);
-  return res.status(201).json({ request });
 });
 
 // ===============================
 // Phase 7: Staff
 // ===============================
-app.get('/api/staff', authMiddleware, (req, res) => {
-  res.json({ staff: staffMembers });
+app.get('/api/staff', authMiddleware, async (req, res, next) => {
+  try {
+    const staff = await knex('users')
+      .select('id', 'name', 'role', 'department', 'phone', 'email', 'workload')
+      .where({ is_active: 1 });
+    res.json({ staff });
+  } catch (err) {
+    next(err);
+  }
 });
 
 // ===============================
@@ -1470,44 +1560,104 @@ app.get('/api/analytics/top-clients', authMiddleware, (req, res) => {
 // ===============================
 // Phase 7: Permissions
 // ===============================
-app.get('/api/permissions/users', authMiddleware, (req, res) => {
-  res.json({ users: permissionMatrix });
+app.get('/api/permissions/users', authMiddleware, async (req, res, next) => {
+  try {
+    const users = await knex('users as u')
+      .leftJoin('user_permissions as p', 'u.id', 'p.user_id')
+      .where('u.is_active', 1)
+      .select(
+        'u.id',
+        'u.name',
+        'u.role',
+        'p.orders',
+        'p.production',
+        'p.cashbox',
+        'p.analytics',
+        'p.warehouse'
+      );
+
+    const mapped = users.map((user) => ({
+      id: user.id,
+      name: user.name,
+      role: user.role,
+      permissions: {
+        orders: !!user.orders,
+        production: !!user.production,
+        cashbox: !!user.cashbox,
+        analytics: !!user.analytics,
+        warehouse: !!user.warehouse,
+      },
+    }));
+
+    res.json({ users: mapped });
+  } catch (err) {
+    next(err);
+  }
 });
 
-app.post('/api/permissions/:userId', authMiddleware, (req, res) => {
-  const { userId } = req.params;
-  const entry = permissionMatrix.find((u) => u.id === Number(userId));
-  if (!entry) {
-    return res.status(404).json({ message: 'Пользователь не найден' });
+app.post('/api/permissions/:userId', authMiddleware, async (req, res, next) => {
+  try {
+    const { userId } = req.params;
+    const user = await knex('users').where({ id: userId, is_active: 1 }).first();
+    if (!user) {
+      return res.status(404).json({ message: 'Пользователь не найден' });
+    }
+
+    const permissions = req.body?.permissions || {};
+
+    await knex('user_permissions')
+      .insert({ user_id: user.id, ...permissions })
+      .onConflict('user_id')
+      .merge();
+
+    const updated = await knex('user_permissions').where({ user_id: user.id }).first();
+
+    res.json({
+      user: {
+        id: user.id,
+        name: user.name,
+        role: user.role,
+        permissions: {
+          orders: !!updated.orders,
+          production: !!updated.production,
+          cashbox: !!updated.cashbox,
+          analytics: !!updated.analytics,
+          warehouse: !!updated.warehouse,
+        },
+      },
+    });
+  } catch (err) {
+    next(err);
   }
-  entry.permissions = {
-    ...entry.permissions,
-    ...(req.body?.permissions || {}),
-  };
-  res.json({ user: entry });
 });
 
 // ===============================
 // Phase 7: Notifications
 // ===============================
-app.get('/api/notifications', authMiddleware, (req, res) => {
-  res.json({ notifications: notificationFeed });
+app.get('/api/notifications', authMiddleware, async (req, res, next) => {
+  try {
+    const notifications = await knex('notifications').orderBy('created_at', 'desc');
+    res.json({ notifications });
+  } catch (err) {
+    next(err);
+  }
 });
 
-app.post('/api/notifications/mark-read', authMiddleware, (req, res) => {
-  const { id } = req.body || {};
-  if (id) {
-    const target = notificationFeed.find((n) => n.id === Number(id));
-    if (target) {
-      target.is_read = true;
-    }
-  } else {
-    notificationFeed.forEach((n) => {
-      n.is_read = true;
-    });
-  }
+app.post('/api/notifications/mark-read', authMiddleware, async (req, res, next) => {
+  try {
+    const { id } = req.body || {};
 
-  res.json({ notifications: notificationFeed });
+    if (id) {
+      await knex('notifications').where({ id }).update({ is_read: true });
+    } else {
+      await knex('notifications').update({ is_read: true });
+    }
+
+    const notifications = await knex('notifications').orderBy('created_at', 'desc');
+    res.json({ notifications });
+  } catch (err) {
+    next(err);
+  }
 });
 
 
@@ -1527,6 +1677,13 @@ app.use((err, req, res, next) => {
 });
 
 const PORT = process.env.PORT || 4000;
-app.listen(PORT, () => {
-  console.log(`PDCRM backend listening on port ${PORT}`);
-});
+ensureSchemaPatches()
+  .then(() => {
+    app.listen(PORT, () => {
+      console.log(`PDCRM backend listening on port ${PORT}`);
+    });
+  })
+  .catch((err) => {
+    console.error('Failed to start server due to migration error', err);
+    process.exit(1);
+  });
