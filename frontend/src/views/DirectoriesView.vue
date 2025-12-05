@@ -53,6 +53,15 @@
           <button class="btn btn-primary" type="button" @click="undoDelete">Отменить</button>
         </div>
 
+        <div v-if="pendingNavigation.type && unsavedChanges" class="unsaved-banner">
+          <div class="unsaved-text">Есть несохранённые данные.</div>
+          <div class="unsaved-actions">
+            <button class="btn" type="button" @click="discardAndContinue">Закрыть без сохранения</button>
+            <button class="btn" type="button" @click="saveDraftAndContinue">Сохранить черновик</button>
+            <button class="btn btn-primary" type="button" @click="saveAndContinue">Сохранить</button>
+          </div>
+        </div>
+
         <div class="modal-toolbar">
           <label class="search-field">
             <span class="input-label">Поиск</span>
@@ -93,7 +102,7 @@
             class="table-row"
           >
             <div v-for="column in currentConfig.columns" :key="column.key">
-              {{ item[column.key] ?? '—' }}
+              {{ displayValue(item, column) }}
             </div>
             <div class="actions-col actions-col-body">
               <button class="btn" type="button" @click="startEdit(item)">Редактировать</button>
@@ -220,7 +229,9 @@ const validationHints = reactive({});
 const emailHints = reactive({});
 const undoState = reactive({ timer: null, record: null, type: '', label: '' });
 const unsavedChanges = ref(false);
+const formTouched = ref(false);
 const suspendAutosave = ref(false);
+const pendingNavigation = reactive({ type: '', target: '' });
 
 const databaseConfigs = {
   users: {
@@ -452,6 +463,39 @@ const fieldOptions = (field) => {
   return field.options || [];
 };
 
+const toCamel = (value) => value.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
+const toSnake = (value) => value.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`);
+
+const resolveAlias = (record, key) => {
+  const camel = toCamel(key);
+  const snake = toSnake(key);
+
+  const aliasCandidates = [
+    `${key}_name`,
+    `${key}_label`,
+    `${camel}Name`,
+    `${camel}Label`,
+    `${snake}_name`,
+    `${snake}_label`,
+  ];
+
+  const found = aliasCandidates.find((candidate) => record?.[candidate] !== undefined);
+  if (found) return record[found];
+  if (record?.data && record.data[key] !== undefined) return record.data[key];
+  return undefined;
+};
+
+const displayValue = (record, column) => {
+  const raw = record?.[column.key];
+  const alias = resolveAlias(record, column.key);
+  const value = raw !== undefined && raw !== null && raw !== '' ? raw : alias;
+
+  if (value === undefined || value === null || value === '') return '—';
+  if (typeof value === 'object') return value.label || value.name || JSON.stringify(value);
+  if (typeof value === 'boolean') return value ? 'Да' : 'Нет';
+  return value;
+};
+
 async function loadDatabase(key) {
   const { data } = await axios.get(`/api/directories/${key}`);
 
@@ -460,45 +504,24 @@ async function loadDatabase(key) {
   const fieldKeys = config?.fields?.map((f) => f.key) || [];
   const knownKeys = new Set(['id', ...columnKeys, ...fieldKeys]);
 
-  const toCamel = (value) =>
-    value.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
-  const toSnake = (value) =>
-    value.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`);
-
-  const resolveAlias = (record, key) => {
-    const camel = toCamel(key);
-    const snake = toSnake(key);
-
-    const aliasCandidates = [
-      `${key}_name`,
-      `${key}_label`,
-      `${camel}Name`,
-      `${camel}Label`,
-      `${snake}_name`,
-      `${snake}_label`,
-    ];
-
-    const found = aliasCandidates.find((candidate) => record[candidate] !== undefined);
-    return found ? record[found] : undefined;
-  };
-
   records[key] = (data.records || []).map((record) => {
     const normalized = { ...record };
 
     // Align backend keys (snake_case / camelCase) to the keys that the UI renders
     knownKeys.forEach((k) => {
-      if (normalized[k] !== undefined) return;
+      if (normalized[k] !== undefined && normalized[k] !== null && normalized[k] !== '') return;
       const camel = toCamel(k);
       const snake = toSnake(k);
       const aliasValue = resolveAlias(record, k);
+      const direct = record?.[k];
       normalized[k] =
-        record?.[camel] !== undefined
-          ? record[camel]
-          : record?.[snake] !== undefined
-            ? record[snake]
-            : aliasValue !== undefined
-              ? aliasValue
-              : record?.[k];
+        direct !== undefined && direct !== null && direct !== ''
+          ? direct
+          : record?.[camel] !== undefined
+            ? record[camel]
+            : record?.[snake] !== undefined
+              ? record[snake]
+              : aliasValue;
     });
 
     return normalized;
@@ -527,16 +550,28 @@ async function loadAll() {
   await Promise.all(databases.map((db) => loadDatabase(db.key)));
 }
 
-function openDatabase(key) {
-  if (unsavedChanges.value) {
-    const confirmed = window.confirm(
-      'Есть несохранённые данные. Нажмите “ОК”, чтобы сохранить, или “Отмена”, чтобы оставить как черновик.'
-    );
-    if (confirmed) {
-      saveRecord();
-      return;
-    }
+function applyNavigation(target = '') {
+  if (pendingNavigation.type === 'switch') {
+    activateDatabase(target || pendingNavigation.target);
   }
+  if (pendingNavigation.type === 'close') {
+    activeDatabase.value = '';
+    editingId.value = null;
+  }
+  pendingNavigation.type = '';
+  pendingNavigation.target = '';
+}
+
+function requestNavigation(type, target = '') {
+  if (unsavedChanges.value) {
+    pendingNavigation.type = type;
+    pendingNavigation.target = target;
+    return true;
+  }
+  return false;
+}
+
+function activateDatabase(key) {
   activeDatabase.value = key;
   loadDatabase(key);
   resetForm();
@@ -544,16 +579,15 @@ function openDatabase(key) {
   filters[key].filter = '';
 }
 
+function openDatabase(key) {
+  const blocked = requestNavigation('switch', key);
+  if (blocked) return;
+  activateDatabase(key);
+}
+
 function closeModal() {
-  if (unsavedChanges.value) {
-    const choice = window.confirm(
-      'Есть несохранённые изменения. Нажмите “ОК”, чтобы сохранить или “Отмена”, чтобы закрыть и сохранить как черновик.'
-    );
-    if (choice) {
-      saveRecord();
-      return;
-    }
-  }
+  const blocked = requestNavigation('close');
+  if (blocked) return;
   activeDatabase.value = '';
   editingId.value = null;
 }
@@ -566,6 +600,7 @@ function startCreate(key) {
   const fields = databaseConfigs[activeDatabase.value].fields;
   const draft = readDraft(activeDatabase.value);
   suspendAutosave.value = true;
+  formTouched.value = false;
   form.value = fields.reduce((acc, field) => {
     const draftValue = draft?.[field.key];
     if (draftValue !== undefined) {
@@ -587,6 +622,7 @@ function startEdit(item) {
   editingId.value = item.id;
   form.value = { ...item };
   validationHintsReset();
+  formTouched.value = false;
 }
 
 function resetForm() {
@@ -599,6 +635,7 @@ function resetForm() {
   editingId.value = null;
   validationHintsReset();
   unsavedChanges.value = false;
+  formTouched.value = false;
 }
 
 async function deleteRecord(id) {
@@ -639,7 +676,11 @@ async function saveRecord() {
   await loadDatabase(activeDatabase.value);
   resetForm();
   unsavedChanges.value = false;
+  formTouched.value = false;
   clearDraft(activeDatabase.value);
+  if (pendingNavigation.type) {
+    applyNavigation();
+  }
 }
 
 function validationHintsReset() {
@@ -661,7 +702,11 @@ function clearDraft(key) {
 
 function handleInput(field) {
   const value = form.value[field.key];
-  if (!value && value !== 0) return;
+  if (!value && value !== 0) {
+    formTouched.value = true;
+    unsavedChanges.value = true;
+    return;
+  }
 
   if (/phone/i.test(field.key)) {
     const digits = String(value).replace(/\D/g, '').replace(/^8/, '7').slice(0, 11);
@@ -689,6 +734,7 @@ function handleInput(field) {
   }
 
   unsavedChanges.value = true;
+  formTouched.value = true;
 }
 
 function emailListId(field) {
@@ -716,10 +762,32 @@ async function undoDelete() {
   undoState.label = '';
 }
 
+function saveAndContinue() {
+  saveRecord();
+}
+
+function saveDraftAndContinue() {
+  if (!activeDatabase.value) return;
+  if (formTouched.value) {
+    localStorage.setItem(
+      `directories-draft-${activeDatabase.value}`,
+      JSON.stringify({ form: form.value, timestamp: Date.now() })
+    );
+  }
+  unsavedChanges.value = false;
+  applyNavigation();
+}
+
+function discardAndContinue() {
+  unsavedChanges.value = false;
+  formTouched.value = false;
+  applyNavigation();
+}
+
 watch(
   () => ({ ...form.value, db: activeDatabase.value }),
   () => {
-    if (!activeDatabase.value || suspendAutosave.value) return;
+    if (!activeDatabase.value || suspendAutosave.value || !formTouched.value) return;
     localStorage.setItem(
       `directories-draft-${activeDatabase.value}`,
       JSON.stringify({ form: form.value, timestamp: Date.now() })
@@ -856,6 +924,25 @@ onMounted(loadAll);
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+}
+
+.unsaved-banner {
+  background: rgba(255, 193, 7, 0.08);
+  border: 1px solid rgba(255, 193, 7, 0.4);
+  color: #fbbf24;
+  padding: 12px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.unsaved-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 .modal-header {
