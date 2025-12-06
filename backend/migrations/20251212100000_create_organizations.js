@@ -12,6 +12,7 @@ exports.up = async function (knex) {
       table.string('name').notNullable();
       table.string('inn').notNullable();
       table.string('kpp').nullable();
+      table.string('ogrn').nullable();
       table.string('legal_address').notNullable();
       table.string('contact_person').nullable();
       table.string('phone').notNullable();
