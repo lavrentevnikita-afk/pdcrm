@@ -4,518 +4,432 @@
       <div>
         <div class="page-title">Заказы</div>
         <div class="page-subtitle">
-          Список заказов с быстрыми фильтрами и правой сводкой по статусам.
+          Простая карточка заказа с позициями и автоматическим пересчётом суммы.
         </div>
       </div>
-
       <div class="page-actions">
-        <button class="btn-primary" type="button" @click="openCreateDrawer">
-          + Новый заказ
-        </button>
+        <button class="btn-primary" type="button" @click="openCreate">Создать заказ</button>
       </div>
     </div>
 
-    <div class="orders-layout">
-      <div class="orders-main">
-        <div class="orders-filters">
-          <div class="orders-filters-row">
-            <div class="orders-filters-group">
-              <label class="orders-filter-label">
-                Поиск
-                <input
-                  v-model="filters.search"
-                  type="text"
-                  class="orders-filter-input"
-                  placeholder="№ заказа, клиент, телефон…"
-                  @keyup.enter="applyFilters"
-                />
-              </label>
-            </div>
-
-            <div class="orders-filters-group">
-              <label class="orders-filter-label">
-                Статус
-                <select
-                  v-model="filters.status"
-                  class="orders-filter-select"
-                  @change="applyFilters"
-                >
-                  <option value="all">Все</option>
-                  <option value="new">Новые</option>
-                  <option value="in_progress">В работе</option>
-                  <option value="production">В производстве</option>
-                  <option value="completed">Завершённые</option>
-                  <option value="cancelled">Отменённые</option>
-                </select>
-              </label>
-            </div>
-
-            <div class="orders-filters-group orders-filters-dates">
-              <label class="orders-filter-label">
-                Дата от
-                <input
-                  v-model="filters.dateFrom"
-                  type="date"
-                  class="orders-filter-input"
-                />
-              </label>
-              <label class="orders-filter-label">
-                Дата до
-                <input
-                  v-model="filters.dateTo"
-                  type="date"
-                  class="orders-filter-input"
-                />
-              </label>
-            </div>
-
-            <div class="orders-filters-group">
-              <label class="orders-filter-checkbox">
-                <input
-                  v-model="filters.onlyMy"
-                  type="checkbox"
-                />
-                <span>Только мои</span>
-              </label>
-            </div>
-
-            <div class="orders-filters-actions">
-              <button class="btn-secondary" type="button" @click="resetFilters">
-                Сбросить
-              </button>
-              <button class="btn-primary" type="button" @click="applyFilters">
-                Применить
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <div v-if="loading" class="page-loading">
-          Загрузка заказов…
-        </div>
-
-        <div v-if="error" class="page-error">
-          {{ error }}
-        </div>
-
-        <div v-if="!loading && !orders.length && !error" class="orders-empty">
-          Заказы не найдены. Попробуйте поменять фильтры.
-        </div>
-
-        <div v-if="!loading && orders.length" class="orders-list">
-          <OrderCard
+    <div class="card">
+      <div v-if="loading" class="page-loading">Загрузка…</div>
+      <div v-else-if="error" class="page-error">{{ error }}</div>
+      <table v-else class="orders-table">
+        <thead>
+          <tr>
+            <th>№</th>
+            <th>Дата</th>
+            <th>Комментарий</th>
+            <th class="text-right">Сумма</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-if="!orders.length">
+            <td colspan="4" class="page-loading">Нет заказов</td>
+          </tr>
+          <tr
             v-for="order in orders"
             :key="order.id"
-            :order="order"
-          />
-        </div>
-      </div>
-
-      <aside class="orders-sidebar">
-        <div class="orders-summary-card">
-          <div class="orders-summary-title">Статусы заказов</div>
-          <div class="orders-summary-row">
-            <span>Активные</span>
-            <span class="orders-summary-badge orders-summary-badge--active">
-              {{ stats.activeCount }}
-            </span>
-          </div>
-          <div class="orders-summary-row">
-            <span>Завершённые</span>
-            <span class="orders-summary-badge orders-summary-badge--completed">
-              {{ stats.completedCount }}
-            </span>
-          </div>
-          <div class="orders-summary-row">
-            <span>Отменённые</span>
-            <span class="orders-summary-badge orders-summary-badge--cancelled">
-              {{ stats.cancelledCount }}
-            </span>
-          </div>
-        </div>
-
-        <div class="orders-summary-card">
-          <div class="orders-summary-title">Последний завершённый заказ</div>
-          <div v-if="lastCompleted">
-            <div class="orders-last-number">
-              #{{ lastCompleted.order_number }}
-            </div>
-            <div class="orders-last-title">
-              {{ lastCompleted.title }}
-            </div>
-            <div class="orders-last-client" v-if="lastCompleted.client_name">
-              {{ lastCompleted.client_name }}
-            </div>
-            <div class="orders-last-meta">
-              <span>Сумма: {{ formatMoney(lastCompleted.sum_total) }}</span>
-              <span>Дедлайн: {{ formatDate(lastCompleted.deadline_at) }}</span>
-            </div>
-          </div>
-          <div v-else class="orders-empty-small">
-            Пока нет завершённых заказов.
-          </div>
-        </div>
-      </aside>
+            class="orders-row"
+            @click="openEdit(order.id)"
+          >
+            <td>{{ order.id }}</td>
+            <td>{{ formatDate(order.created_at) }}</td>
+            <td>{{ order.comment || '—' }}</td>
+            <td class="text-right">{{ formatMoney(order.total_amount) }}</td>
+          </tr>
+        </tbody>
+      </table>
     </div>
 
-    <OrderCreateDrawer
-        :visible="isCreateOpen"
-        @close="isCreateOpen = false"
-        @created="handleOrderCreated"
-      />
+    <div v-if="isModalOpen" class="modal-overlay" @click.self="closeModal">
+      <div class="modal">
+        <div class="modal-header">
+          <div class="modal-title">
+            {{ form.id ? `Редактирование заказа #${form.id}` : 'Новый заказ' }}
+          </div>
+          <button class="icon-button" type="button" @click="closeModal">×</button>
+        </div>
 
+        <div class="modal-body">
+          <label class="field">
+            <span>Комментарий</span>
+            <textarea v-model="form.comment" rows="2" />
+          </label>
+
+          <label class="field">
+            <span>Дедлайн (опционально)</span>
+            <input v-model="form.deadline" type="datetime-local" />
+          </label>
+
+          <label class="field">
+            <span>Статус</span>
+            <select v-model="form.status">
+              <option value="new">new</option>
+              <option value="in_progress">in_progress</option>
+              <option value="completed">completed</option>
+              <option value="cancelled">cancelled</option>
+            </select>
+          </label>
+
+          <div class="items-block">
+            <div class="items-header">
+              <div>Позиции заказа</div>
+              <button class="btn-secondary" type="button" @click="addItem">+ Добавить</button>
+            </div>
+            <table class="items-table">
+              <thead>
+                <tr>
+                  <th>Название</th>
+                  <th>Кол-во</th>
+                  <th>Цена</th>
+                  <th>Сумма</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="(item, index) in form.items" :key="item.key">
+                  <td>
+                    <input v-model="item.name" type="text" @input="updateItem(index)" />
+                  </td>
+                  <td>
+                    <input
+                      v-model.number="item.qty"
+                      type="number"
+                      min="0"
+                      step="1"
+                      @input="updateItem(index)"
+                    />
+                  </td>
+                  <td>
+                    <input
+                      v-model.number="item.price"
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      @input="updateItem(index)"
+                    />
+                  </td>
+                  <td class="text-right">{{ formatMoney(item.line_total) }}</td>
+                  <td>
+                    <button class="icon-button" type="button" @click="removeItem(index)">×</button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <div class="total">Сумма заказа: {{ formatMoney(totalAmount) }}</div>
+          <div class="footer-actions">
+            <button class="btn-secondary" type="button" @click="closeModal">Отмена</button>
+            <button class="btn-primary" type="button" :disabled="saving" @click="saveOrder">
+              {{ saving ? 'Сохранение…' : 'Сохранить' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted } from 'vue';
-import axios from 'axios';
-import OrderCard from '../components/orders/OrderCard.vue';
-import OrderCreateDrawer from '../components/orders/OrderCreateDrawer.vue';
+import { computed, onMounted, reactive, ref } from 'vue';
+import api from '../utils/apiClient';
 
 const orders = ref([]);
-const isCreateOpen = ref(false);
 const loading = ref(false);
 const error = ref('');
+const saving = ref(false);
+const isModalOpen = ref(false);
 
-const filters = reactive({
-  search: '',
-  status: 'all',
-  dateFrom: '',
-  dateTo: '',
-  onlyMy: false,
+const form = reactive({
+  id: null,
+  comment: '',
+  deadline: '',
+  status: 'new',
+  items: [],
 });
 
-const stats = reactive({
-  activeCount: 0,
-  completedCount: 0,
-  cancelledCount: 0,
-});
-
-const lastCompleted = computed(() => {
-  const completed = orders.value
-    .filter((o) => o.status === 'completed')
-    .slice()
-    .sort((a, b) => {
-      const ad = a.deadline_at ? new Date(a.deadline_at).getTime() : 0;
-      const bd = b.deadline_at ? new Date(b.deadline_at).getTime() : 0;
-      return bd - ad;
-    });
-
-  return completed[0] || null;
-});
+const totalAmount = computed(() =>
+  form.items.reduce((acc, item) => acc + Number(item.line_total || 0), 0)
+);
 
 function formatDate(value) {
   if (!value) return '—';
   const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return '—';
-  const day = String(d.getDate()).padStart(2, '0');
-  const month = String(d.getMonth() + 1).padStart(2, '0');
-  const year = d.getFullYear();
-  const hours = String(d.getHours()).padStart(2, '0');
-  const minutes = String(d.getMinutes()).padStart(2, '0');
-  return `${day}.${month}.${year} ${hours}:${minutes}`;
-}
-
-function formatMoney(value) {
-  const num = Number(value) || 0;
-  return num.toLocaleString('ru-RU', {
-    style: 'currency',
-    currency: 'RUB',
-    maximumFractionDigits: 0,
+  if (Number.isNaN(d.getTime())) return value;
+  return d.toLocaleString('ru-RU', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
   });
 }
 
-function recomputeStats() {
-  const all = orders.value;
-  stats.activeCount = all.filter((o) =>
-    ['new', 'in_progress', 'production'].includes(o.status)
-  ).length;
-  stats.completedCount = all.filter((o) => o.status === 'completed').length;
-  stats.cancelledCount = all.filter((o) => o.status === 'cancelled').length;
+function formatMoney(value) {
+  return (Number(value) || 0).toLocaleString('ru-RU', {
+    style: 'currency',
+    currency: 'RUB',
+    maximumFractionDigits: 2,
+  });
+}
+
+function resetForm() {
+  form.id = null;
+  form.comment = '';
+  form.deadline = '';
+  form.status = 'new';
+  form.items = [createItem()];
+}
+
+function createItem() {
+  return { key: crypto.randomUUID(), name: '', qty: 1, price: 0, line_total: 0 };
+}
+
+function addItem() {
+  form.items.push(createItem());
+}
+
+function removeItem(index) {
+  form.items.splice(index, 1);
+  if (!form.items.length) form.items.push(createItem());
+  recalcTotals();
+}
+
+function recalcTotals() {
+  form.items.forEach((item) => {
+    const qty = Number(item.qty) || 0;
+    const price = Number(item.price) || 0;
+    item.line_total = qty * price;
+  });
+}
+
+function updateItem(index) {
+  if (!form.items[index]) return;
+  recalcTotals();
 }
 
 async function loadOrders() {
   loading.value = true;
   error.value = '';
-
   try {
-    const params = {};
-    if (filters.search.trim()) params.search = filters.search.trim();
-    if (filters.status && filters.status !== 'all') {
-      params.status = filters.status;
-    }
-    if (filters.dateFrom) params.date_from = filters.dateFrom;
-    if (filters.dateTo) params.date_to = filters.dateTo;
-    if (filters.onlyMy) params.my = '1';
-
-    const { data } = await axios.get('/api/orders', { params });
+    const { data } = await api.get('/orders');
     orders.value = Array.isArray(data.items) ? data.items : [];
-    recomputeStats();
   } catch (err) {
-    console.error('Orders load error', err);
-    error.value =
-      err?.response?.data?.message || 'Не удалось загрузить список заказов';
+    error.value = err?.response?.data?.message || 'Не удалось загрузить заказы';
   } finally {
     loading.value = false;
   }
 }
 
-function applyFilters() {
+async function openEdit(id) {
+  try {
+    const { data } = await api.get(`/orders/${id}`);
+    form.id = data.id;
+    form.comment = data.comment || '';
+    form.deadline = data.deadline ? data.deadline.slice(0, 16) : '';
+    form.status = data.status || 'new';
+    form.items = (data.items || []).map((item) => ({
+      key: crypto.randomUUID(),
+      name: item.name,
+      qty: item.qty,
+      price: item.price,
+      line_total: item.line_total,
+    }));
+    if (!form.items.length) form.items.push(createItem());
+    isModalOpen.value = true;
+  } catch (err) {
+    error.value = err?.response?.data?.message || 'Не удалось открыть заказ';
+  }
+}
+
+function openCreate() {
+  resetForm();
+  isModalOpen.value = true;
+}
+
+function closeModal() {
+  isModalOpen.value = false;
+}
+
+async function saveOrder() {
+  saving.value = true;
+  try {
+    recalcTotals();
+    const payload = {
+      comment: form.comment,
+      deadline: form.deadline ? new Date(form.deadline).toISOString() : null,
+      status: form.status,
+      items: form.items,
+    };
+
+    if (form.id) {
+      await api.put(`/orders/${form.id}`, payload);
+    } else {
+      await api.post('/orders', payload);
+    }
+
+    await loadOrders();
+    closeModal();
+  } catch (err) {
+    error.value = err?.response?.data?.message || 'Не удалось сохранить заказ';
+  } finally {
+    saving.value = false;
+  }
+}
+
+onMounted(() => {
+  resetForm();
   loadOrders();
-}
-
-function resetFilters() {
-  filters.search = '';
-  filters.status = 'all';
-  filters.dateFrom = '';
-  filters.dateTo = '';
-  filters.onlyMy = false;
-  loadOrders();
-}
-
-function openCreateDrawer() {
-  isCreateOpen.value = true;
-}
-
-function handleOrderCreated(order) {
-  // Можно оптимистично добавить заказ в начало списка,
-  // но надёжнее перезагрузить список с сервера.
-  isCreateOpen.value = false;
-  loadOrders();
-}
-
-onMounted(loadOrders);
+});
 </script>
 
 <style scoped>
-.orders-layout {
-  display: grid;
-  grid-template-columns: minmax(0, 3fr) minmax(260px, 1fr);
-  gap: 20px;
-  align-items: flex-start;
-}
-
-@media (max-width: 1024px) {
-  .orders-layout {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .orders-sidebar {
-    order: -1;
-  }
-}
-
-.orders-main {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.orders-filters {
+.card {
   background: var(--color-bg-alt);
-  border-radius: 16px;
-  padding: 14px 16px;
+  border-radius: 12px;
+  padding: 12px;
   box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
 }
 
-.orders-filters-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px 16px;
-  align-items: flex-end;
+.orders-table,
+.items-table {
+  width: 100%;
+  border-collapse: collapse;
 }
 
-.orders-filters-group {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
+.orders-table th,
+.orders-table td,
+.items-table th,
+.items-table td {
+  padding: 8px;
+  border-bottom: 1px solid var(--color-border);
+  text-align: left;
 }
 
-.orders-filters-dates {
-  flex-direction: row;
-  align-items: flex-end;
-  gap: 10px;
+.text-right {
+  text-align: right;
 }
 
-.orders-filter-label {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  font-size: 12px;
-  color: var(--color-text-muted);
+.orders-row {
+  cursor: pointer;
 }
 
-.orders-filter-input,
-.orders-filter-select {
-  font-size: 13px;
-  padding: 6px 10px;
-  border-radius: 999px;
-  border: 1px solid var(--color-border);
-  background: var(--color-bg-alt);
-  outline: none;
-  min-width: 180px;
-}
-
-.orders-filter-input:focus,
-.orders-filter-select:focus {
-  border-color: var(--color-primary);
-  box-shadow: 0 0 0 1px var(--color-primary-soft);
-}
-
-.orders-filter-checkbox {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 13px;
-  color: var(--color-text-muted);
-}
-
-.orders-filter-checkbox input {
-  width: 16px;
-  height: 16px;
-}
-
-.orders-filters-actions {
-  margin-left: auto;
-  display: flex;
-  gap: 8px;
+.orders-row:hover {
+  background: rgba(0, 0, 0, 0.02);
 }
 
 .btn-primary,
 .btn-secondary {
-  border-radius: 999px;
-  padding: 6px 14px;
-  font-size: 13px;
-  border: 1px solid transparent;
+  border-radius: 8px;
+  padding: 8px 12px;
+  border: none;
   cursor: pointer;
-  white-space: nowrap;
 }
 
 .btn-primary {
   background: var(--color-primary);
-  color: #ffffff;
-  border-color: var(--color-primary);
-}
-
-.btn-primary:hover {
-  opacity: 0.9;
+  color: #fff;
 }
 
 .btn-secondary {
-  background: var(--color-bg-alt);
-  color: var(--color-text-muted);
-  border-color: var(--color-border);
+  background: #e5e7eb;
+  color: #111827;
 }
 
-.btn-secondary:hover {
-  background: #e5e7f0;
-}
-
-.orders-list {
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.35);
   display: flex;
-  flex-direction: column;
-  gap: 10px;
+  justify-content: center;
+  align-items: center;
+  padding: 16px;
+  z-index: 100;
 }
 
-.orders-empty {
-  background: var(--color-bg-alt);
+.modal {
+  background: #fff;
   border-radius: 12px;
-  padding: 20px;
-  font-size: 13px;
-  color: var(--color-text-muted);
-  text-align: center;
-}
-
-.orders-empty-small {
-  font-size: 13px;
-  color: var(--color-text-muted);
-}
-
-.orders-sidebar {
+  max-width: 900px;
+  width: 100%;
+  max-height: 90vh;
   display: flex;
   flex-direction: column;
+}
+
+.modal-header,
+.modal-footer {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--color-border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   gap: 12px;
 }
 
-.orders-summary-card {
-  background: var(--color-bg-alt);
-  border-radius: 16px;
-  padding: 14px 16px;
-  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
-  font-size: 13px;
+.modal-footer {
+  border-top: 1px solid var(--color-border);
+  border-bottom: none;
 }
 
-.orders-summary-title {
+.modal-body {
+  padding: 12px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow: auto;
+}
+
+.modal-title {
   font-weight: 600;
-  margin-bottom: 8px;
+  font-size: 18px;
 }
 
-.orders-summary-row {
+.icon-button {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  font-size: 18px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.field input,
+.field textarea,
+.field select {
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 8px;
+  font-size: 14px;
+}
+
+.items-block {
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 8px;
+}
+
+.items-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 4px;
+  margin-bottom: 8px;
 }
 
-.orders-summary-badge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 28px;
-  padding: 3px 8px;
-  border-radius: 999px;
-  font-size: 12px;
-}
-
-.orders-summary-badge--active {
-  background: var(--color-primary-soft);
-  color: var(--color-primary);
-}
-
-.orders-summary-badge--completed {
-  background: rgba(34, 197, 94, 0.16);
-  color: #16a34a;
-}
-
-.orders-summary-badge--cancelled {
-  background: rgba(239, 68, 68, 0.12);
-  color: #ef4444;
-}
-
-.orders-last-number {
-  font-size: 12px;
-  color: var(--color-text-muted);
-  margin-bottom: 4px;
-}
-
-.orders-last-title {
-  font-weight: 600;
-  margin-bottom: 4px;
-}
-
-.orders-last-client {
-  font-size: 13px;
-  margin-bottom: 6px;
-}
-
-.orders-last-meta {
+.footer-actions {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
-  font-size: 12px;
-  color: var(--color-text-muted);
+  gap: 8px;
+  align-items: center;
 }
 
-.page-error {
-  margin-bottom: 8px;
-  font-size: 13px;
-  color: var(--color-error);
-}
-
-.page-loading {
-  margin-bottom: 8px;
-  font-size: 13px;
-  color: var(--color-text-muted);
+.total {
+  font-weight: 600;
 }
 </style>
