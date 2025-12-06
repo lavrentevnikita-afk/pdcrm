@@ -502,7 +502,18 @@ app.get('/api/orders', authMiddleware, async (req, res, next) => {
       .select('o.*', 'c.data as client_data')
       .orderBy('o.created_at', 'desc');
 
-    return res.json({ items: rows.map((row) => mapOrder(row)) });
+    const orderIds = rows.map((row) => row.id);
+    const items = orderIds.length
+      ? await knex('order_items').whereIn('order_id', orderIds).orderBy('id', 'asc')
+      : [];
+    const itemsByOrder = new Map();
+    for (const item of items) {
+      const list = itemsByOrder.get(item.order_id) || [];
+      list.push(item);
+      itemsByOrder.set(item.order_id, list);
+    }
+
+    return res.json({ items: rows.map((row) => mapOrder(row, itemsByOrder.get(row.id))) });
   } catch (err) {
     return next(err);
   }
@@ -535,23 +546,49 @@ app.get('/api/orders/:id', authMiddleware, async (req, res, next) => {
   }
 });
 
-function recalcTotals(items = []) {
+async function recalcTotalsAsync(items = [], db) {
+  const productIds = Array.from(
+    new Set(items.map((item) => Number(item?.product_id)).filter(Boolean))
+  );
+
+  if (!productIds.length) {
+    throw new Error('Укажите продукцию для каждой позиции');
+  }
+
+  const products = await db('products').whereIn('id', productIds);
+  const productsMap = new Map(products.map((p) => [p.id, p]));
+
   const normalized = [];
   let total = 0;
 
   for (const item of items) {
-    if (!item || !item.name) continue;
+    if (!item || !item.product_id) {
+      throw new Error('Выберите продукцию для каждой позиции');
+    }
+    const product = productsMap.get(Number(item.product_id));
+    if (!product) {
+      throw new Error('Выбранный товар не найден');
+    }
+
     const qty = Number(item.qty) || 0;
-    const price = Number(item.price) || 0;
+    const price =
+      item.price === undefined || item.price === null || item.price === ''
+        ? Number(product.base_price || 0)
+        : Number(item.price) || 0;
     const lineTotal = qty * price;
     total += lineTotal;
+
     normalized.push({
-      product_id: item.product_id || null,
-      name: item.name,
+      product_id: product.id,
+      name: item.name?.trim() || product.name,
       qty,
       price,
       line_total: lineTotal,
     });
+  }
+
+  if (!normalized.length) {
+    throw new Error('Добавьте хотя бы одну позицию с товаром');
   }
 
   return { total, normalizedItems: normalized };
@@ -564,7 +601,7 @@ app.post('/api/orders', authMiddleware, async (req, res, next) => {
     const { client_id: clientId, status, deadline, comment, items = [] } =
       req.body || {};
 
-    const { total, normalizedItems } = recalcTotals(items);
+    const { total, normalizedItems } = await recalcTotalsAsync(items, trx);
     const normalizedStatus = normalizeStatus(status);
 
     const [orderId] = await trx('orders').insert({
@@ -599,6 +636,9 @@ app.post('/api/orders', authMiddleware, async (req, res, next) => {
     return res.status(201).json(mapOrder(created, createdItems));
   } catch (err) {
     await trx.rollback();
+    if (err?.message) {
+      return res.status(400).json({ message: err.message });
+    }
     return next(err);
   }
 });
@@ -617,7 +657,7 @@ app.put('/api/orders/:id', authMiddleware, async (req, res, next) => {
       return res.status(404).json({ message: 'Заказ не найден' });
     }
 
-    const { total, normalizedItems } = recalcTotals(items);
+    const { total, normalizedItems } = await recalcTotalsAsync(items, trx);
 
     await trx('orders')
       .where({ id })
@@ -655,6 +695,9 @@ app.put('/api/orders/:id', authMiddleware, async (req, res, next) => {
     return res.json(mapOrder(updated, updatedItems));
   } catch (err) {
     await trx.rollback();
+    if (err?.message) {
+      return res.status(400).json({ message: err.message });
+    }
     return next(err);
   }
 });

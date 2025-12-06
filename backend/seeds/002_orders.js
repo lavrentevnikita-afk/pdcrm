@@ -1,5 +1,5 @@
 /**
- * Seed demo orders with simple structure.
+ * Seed demo orders with simple structure tied to products.
  * @param {import('knex').Knex} knex
  */
 exports.seed = async function (knex) {
@@ -14,37 +14,40 @@ exports.seed = async function (knex) {
     })
   );
 
+  const products = await knex('products').select('id', 'name', 'base_price');
+  const productById = new Map(products.map((p) => [p.id, p]));
+
+  const findProduct = (id) => productById.get(id) || { id: null, name: 'Позиция', base_price: 0 };
+
   const now = new Date();
 
   const orders = [
     {
       clientName: 'Coffee&Co',
-      comment: 'Визитки для кофейни',
+      comment: 'Промо для кофейни',
       status: 'new',
       deadline: new Date(now.getTime() + 2 * 24 * 60 * 60 * 1000).toISOString(),
       items: [
-        { name: 'Дизайн макета', qty: 1, price: 1500 },
-        { name: 'Печать 500 шт.', qty: 500, price: 6.5 },
+        { product_id: 1, qty: 500, price: 6.5 },
+        { product_id: 2, qty: 200, price: 9.5 },
       ],
     },
     {
       clientName: 'ООО «СеверСтрой»',
-      comment: 'Плакаты А2 для акции',
+      comment: 'Тираж для выставки',
       status: 'in_progress',
       deadline: new Date(now.getTime() + 5 * 24 * 60 * 60 * 1000).toISOString(),
       items: [
-        { name: 'Печать 50 шт.', qty: 50, price: 180 },
-        { name: 'Ламинация', qty: 50, price: 25 },
+        { product_id: 2, qty: 50, price: 180 },
+        { product_id: 1, qty: 50, price: 25 },
       ],
     },
     {
       clientName: 'Театр света',
-      comment: 'Наклейки круг 5 см',
+      comment: 'Сувениры',
       status: 'done',
       deadline: new Date(now.getTime() - 3 * 24 * 60 * 60 * 1000).toISOString(),
-      items: [
-        { name: 'Печать 1000 шт.', qty: 1000, price: 3.2 },
-      ],
+      items: [{ product_id: 4, qty: 100, price: 350 }],
     },
   ];
 
@@ -61,18 +64,19 @@ exports.seed = async function (knex) {
     let total = 0;
 
     for (const item of order.items) {
+      const product = findProduct(item.product_id);
       const qty = Number(item.qty) || 0;
-      const price = Number(item.price) || 0;
+      const price = item.price === undefined ? Number(product.base_price || 0) : Number(item.price) || 0;
       const lineTotal = qty * price;
       total += lineTotal;
 
       await knex('order_items').insert({
         order_id: orderId,
-        name: item.name,
+        product_id: product.id,
+        name: product.name,
         qty,
         price,
         line_total: lineTotal,
-        product_id: null,
       });
     }
 

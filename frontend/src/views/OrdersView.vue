@@ -22,7 +22,7 @@
             <th>Дата</th>
             <th>Клиент</th>
             <th>Статус</th>
-            <th>Комментарий</th>
+            <th>Позиции</th>
             <th class="text-right">Сумма</th>
           </tr>
         </thead>
@@ -44,7 +44,7 @@
                 {{ statusLabels[order.status] || order.status }}
               </span>
             </td>
-            <td>{{ order.comment || '—' }}</td>
+            <td>{{ orderSummary(order) }}</td>
             <td class="text-right">{{ formatMoney(order.total_amount) }}</td>
           </tr>
         </tbody>
@@ -138,6 +138,7 @@
             <table class="items-table">
               <thead>
                 <tr>
+                  <th>Продукция</th>
                   <th>Название</th>
                   <th>Кол-во</th>
                   <th>Цена</th>
@@ -148,7 +149,32 @@
               <tbody>
                 <tr v-for="(item, index) in form.items" :key="item.key">
                   <td>
-                    <input v-model="item.name" type="text" @input="updateItem(index)" />
+                    <div class="product-cell">
+                      <input
+                        v-model="item.productSearch"
+                        type="text"
+                        placeholder="Поиск товара"
+                        @input="onProductSearch(index)"
+                      />
+                      <select v-model.number="item.product_id" @change="onProductSelect(index)">
+                        <option :value="null">Выберите продукт</option>
+                        <option
+                          v-for="product in getFilteredProducts(item.productSearch)"
+                          :key="product.id"
+                          :value="product.id"
+                        >
+                          {{ product.name }}
+                        </option>
+                      </select>
+                    </div>
+                  </td>
+                  <td>
+                    <input
+                      v-model="item.name"
+                      type="text"
+                      placeholder="Название позиции"
+                      @input="updateItem(index)"
+                    />
                   </td>
                   <td>
                     <input
@@ -205,6 +231,7 @@ const clients = ref([]);
 const clientSearch = ref('');
 const showNewClientForm = ref(false);
 const creatingClient = ref(false);
+const products = ref([]);
 
 const statusLabels = {
   new: 'Новый',
@@ -255,7 +282,15 @@ function resetForm() {
 }
 
 function createItem() {
-  return { key: crypto.randomUUID(), name: '', qty: 1, price: 0, line_total: 0 };
+  return {
+    key: crypto.randomUUID(),
+    product_id: null,
+    productSearch: '',
+    name: '',
+    qty: 1,
+    price: 0,
+    line_total: 0,
+  };
 }
 
 function addItem() {
@@ -279,6 +314,48 @@ function recalcTotals() {
 function updateItem(index) {
   if (!form.items[index]) return;
   recalcTotals();
+}
+
+async function loadProducts(search = '') {
+  try {
+    const params = search ? { params: { search } } : undefined;
+    const { data } = await api.get('/products', params);
+    products.value = Array.isArray(data) ? data : [];
+  } catch (err) {
+    products.value = [];
+  }
+}
+
+function getFilteredProducts(search = '') {
+  const term = (search || '').trim().toLowerCase();
+  if (!term) return products.value;
+  return products.value.filter((p) => p.name.toLowerCase().includes(term));
+}
+
+function onProductSearch(index) {
+  if (!form.items[index]) return;
+  // The dropdown is filtered locally; no async search to keep UI simple.
+}
+
+function onProductSelect(index) {
+  const item = form.items[index];
+  if (!item) return;
+  const product = products.value.find((p) => p.id === Number(item.product_id));
+  if (!product) return;
+
+  item.name = product.name;
+  item.price = Number(product.base_price || 0);
+  recalcTotals();
+}
+
+function orderSummary(order) {
+  const items = Array.isArray(order?.items) ? order.items : [];
+  if (items.length) {
+    const first = items[0];
+    const extra = items.length > 1 ? ` + ${items.length - 1} поз.` : '';
+    return `${first.name || 'Позиция'}${extra}`;
+  }
+  return order?.comment || '—';
 }
 
 const filteredClients = computed(() => {
@@ -366,6 +443,9 @@ async function loadOrders() {
 
 async function openEdit(id) {
   try {
+    if (!products.value.length) {
+      await loadProducts();
+    }
     const { data } = await api.get(`/orders/${id}`);
     form.id = data.id;
     form.client_id = data.client_id || null;
@@ -374,6 +454,8 @@ async function openEdit(id) {
     form.status = data.status || 'new';
     form.items = (data.items || []).map((item) => ({
       key: crypto.randomUUID(),
+      product_id: item.product_id,
+      productSearch: item.name,
       name: item.name,
       qty: item.qty,
       price: item.price,
@@ -400,12 +482,23 @@ async function saveOrder() {
   try {
     recalcTotals();
     const clientId = form.client_id ? Number(form.client_id) : null;
+    const payloadItems = form.items.map((item) => ({
+      product_id: item.product_id,
+      name: item.name,
+      qty: item.qty,
+      price: item.price,
+    }));
+
+    if (payloadItems.some((item) => !item.product_id)) {
+      throw new Error('Выберите продукцию для каждой позиции');
+    }
+
     const payload = {
       client_id: clientId,
       comment: form.comment,
       deadline: form.deadline ? new Date(form.deadline).toISOString() : null,
       status: form.status,
-      items: form.items,
+      items: payloadItems,
     };
 
     if (form.id) {
@@ -417,7 +510,7 @@ async function saveOrder() {
     await loadOrders();
     closeModal();
   } catch (err) {
-    error.value = err?.response?.data?.message || 'Не удалось сохранить заказ';
+    error.value = err?.response?.data?.message || err?.message || 'Не удалось сохранить заказ';
   } finally {
     saving.value = false;
   }
@@ -425,7 +518,7 @@ async function saveOrder() {
 
 onMounted(() => {
   resetForm();
-  loadClients().finally(() => loadOrders());
+  Promise.all([loadProducts(), loadClients()]).finally(() => loadOrders());
 });
 </script>
 
@@ -450,6 +543,17 @@ onMounted(() => {
   padding: 8px;
   border-bottom: 1px solid var(--color-border);
   text-align: left;
+}
+
+.product-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.product-cell input,
+.product-cell select {
+  width: 100%;
 }
 
 .text-right {
