@@ -17,25 +17,48 @@ exports.seed = async function (knex) {
   let products = await knex('products').select('id', 'name', 'base_price');
 
   // Guarantee at least one product to satisfy NOT NULL product_id on order_items
-  if (products.length === 0) {
-    const [placeholderId] = await knex('products').insert({
-      name: 'Демо продукт',
-      base_price: 0,
-      is_active: 1,
-    });
-
-    products = [
-      {
-        id: placeholderId,
+  const ensurePlaceholder = async () => {
+    if (products.length === 0) {
+      const [placeholderId] = await knex('products').insert({
         name: 'Демо продукт',
         base_price: 0,
-      },
-    ];
-  }
+        is_active: 1,
+      });
+
+      products = [
+        {
+          id: placeholderId,
+          name: 'Демо продукт',
+          base_price: 0,
+        },
+      ];
+    }
+  };
+
+  await ensurePlaceholder();
 
   const productById = new Map(products.map((p) => [p.id, p]));
+  const productByName = new Map(
+    products.map((p) => [String(p.name).trim().toLowerCase(), p])
+  );
 
-  const findProduct = (id) => productById.get(id) || products[0];
+  const findProduct = async (item) => {
+    const byId = item.product_id != null ? productById.get(item.product_id) : null;
+    const byName = item.productName
+      ? productByName.get(String(item.productName).trim().toLowerCase())
+      : null;
+
+    if (byId || byName) {
+      return byId || byName;
+    }
+
+    // Create a placeholder only if there is no product yet (empty DB)
+    await ensurePlaceholder();
+    const placeholder = products[0];
+    productById.set(placeholder.id, placeholder);
+    productByName.set(String(placeholder.name).trim().toLowerCase(), placeholder);
+    return placeholder;
+  };
 
   const now = new Date();
 
@@ -46,8 +69,8 @@ exports.seed = async function (knex) {
       status: 'new',
       deadline: new Date(now.getTime() + 2 * 24 * 60 * 60 * 1000).toISOString(),
       items: [
-        { product_id: 1, qty: 500, price: 6.5 },
-        { product_id: 2, qty: 200, price: 9.5 },
+        { productName: 'Визитки 90×50, 4+4, мелованный 300 г/м²', qty: 500, price: 6.5 },
+        { productName: 'Листовки А5, 4+4, мелованный 130 г/м²', qty: 200, price: 9.5 },
       ],
     },
     {
@@ -56,8 +79,8 @@ exports.seed = async function (knex) {
       status: 'in_progress',
       deadline: new Date(now.getTime() + 5 * 24 * 60 * 60 * 1000).toISOString(),
       items: [
-        { product_id: 2, qty: 50, price: 180 },
-        { product_id: 1, qty: 50, price: 25 },
+        { productName: 'Листовки А5, 4+4, мелованный 130 г/м²', qty: 50, price: 180 },
+        { productName: 'Визитки 90×50, 4+4, мелованный 300 г/м²', qty: 50, price: 25 },
       ],
     },
     {
@@ -65,7 +88,9 @@ exports.seed = async function (knex) {
       comment: 'Сувениры',
       status: 'done',
       deadline: new Date(now.getTime() - 3 * 24 * 60 * 60 * 1000).toISOString(),
-      items: [{ product_id: 4, qty: 100, price: 350 }],
+      items: [
+        { productName: 'Кружка керамическая с логотипом', qty: 100, price: 350 },
+      ],
     },
   ];
 
@@ -82,21 +107,7 @@ exports.seed = async function (knex) {
     let total = 0;
 
     for (const item of order.items) {
-      let product = findProduct(item.product_id);
-
-      // In case the referenced product is missing (e.g. ids shifted),
-      // create a placeholder product to satisfy NOT NULL constraint.
-      if (!product) {
-        const [placeholderId] = await knex('products').insert({
-          name: 'Демо продукт',
-          base_price: 0,
-          is_active: 1,
-        });
-
-        product = { id: placeholderId, name: 'Демо продукт', base_price: 0 };
-        products.unshift(product);
-        productById.set(product.id, product);
-      }
+      const product = await findProduct(item);
       const qty = Number(item.qty) || 0;
       const price = item.price === undefined ? Number(product.base_price || 0) : Number(item.price) || 0;
       const lineTotal = qty * price;
