@@ -16,12 +16,10 @@ const users = [
   { name: 'Администратор', role: 'admin', code: '3333' },
 ];
 
-
 exports.seed = async function (knex) {
   await knex('users').del();
 
   const rows = [];
-
   for (const user of users) {
     const hash = await bcrypt.hash(user.code, 10);
     rows.push({
