@@ -14,28 +14,12 @@ exports.seed = async function (knex) {
     })
   );
 
-  let products = await knex('products').select('id', 'name', 'base_price');
-
-  // Guarantee at least one product to satisfy NOT NULL product_id on order_items
-  const ensurePlaceholder = async () => {
-    if (products.length === 0) {
-      const [placeholderId] = await knex('products').insert({
-        name: 'Демо продукт',
-        base_price: 0,
-        is_active: 1,
-      });
-
-      products = [
-        {
-          id: placeholderId,
-          name: 'Демо продукт',
-          base_price: 0,
-        },
-      ];
-    }
-  };
-
-  await ensurePlaceholder();
+  const products = await knex('products').select('id', 'name', 'base_price');
+  if (products.length === 0) {
+    throw new Error(
+      'Product catalog is empty. Run the product seed before seeding orders.'
+    );
+  }
 
   const productById = new Map(products.map((p) => [p.id, p]));
   const productByName = new Map(
@@ -52,12 +36,11 @@ exports.seed = async function (knex) {
       return byId || byName;
     }
 
-    // Create a placeholder only if there is no product yet (empty DB)
-    await ensurePlaceholder();
-    const placeholder = products[0];
-    productById.set(placeholder.id, placeholder);
-    productByName.set(String(placeholder.name).trim().toLowerCase(), placeholder);
-    return placeholder;
+    throw new Error(
+      `Product not found for order item: ${
+        item.productName || item.product_id || 'unknown'
+      }`
+    );
   };
 
   const now = new Date();
