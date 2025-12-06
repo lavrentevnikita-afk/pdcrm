@@ -187,6 +187,25 @@ const notificationFeed = [
   },
 ];
 
+const DIRECTORY_TYPES = new Set([
+  'users',
+  'productCategories',
+  'products',
+  'clients',
+  'organizations',
+  'materials',
+  'materialCategories',
+  'suppliers',
+  'cashShifts',
+  'postpress',
+  'techCards',
+  'equipment',
+  'productionStages',
+  'pricingFormulas',
+  'clientSources',
+  'staffRoles',
+]);
+
 // Basic middlewares
 app.use(cors());
 app.use(express.json());
@@ -1236,6 +1255,167 @@ app.post('/api/payments', authMiddleware, async (req, res, next) => {
         },
       });
     });
+  } catch (err) {
+    return next(err);
+  }
+});
+
+// ===============================
+// Directories storage (generic)
+// ===============================
+function ensureDirectoryType(type) {
+  if (!DIRECTORY_TYPES.has(type)) {
+    const error = new Error('Неизвестный тип справочника');
+    error.status = 400;
+    throw error;
+  }
+}
+
+app.get('/api/directories/:type', authMiddleware, async (req, res, next) => {
+  try {
+    const { type } = req.params;
+    ensureDirectoryType(type);
+
+    const rows = await knex('directories').where({ type }).orderBy('id', 'asc');
+
+    const items = rows.map((row) => ({
+      id: row.id,
+      created_at: row.created_at,
+      updated_at: row.updated_at,
+      ...(row.data ? JSON.parse(row.data) : {}),
+    }));
+
+    return res.json({ items });
+  } catch (err) {
+    return next(err);
+  }
+});
+
+app.get('/api/directories/:type/export', authMiddleware, async (req, res, next) => {
+  try {
+    const { type } = req.params;
+    ensureDirectoryType(type);
+
+    const rows = await knex('directories').where({ type }).orderBy('id', 'asc');
+
+    const items = rows.map((row) => ({
+      id: row.id,
+      created_at: row.created_at,
+      updated_at: row.updated_at,
+      ...(row.data ? JSON.parse(row.data) : {}),
+    }));
+
+    res.setHeader('Content-Disposition', `attachment; filename="${type}-directories.json"`);
+    return res.json({ items });
+  } catch (err) {
+    return next(err);
+  }
+});
+
+app.post('/api/directories/:type/import', authMiddleware, async (req, res, next) => {
+  try {
+    const { type } = req.params;
+    ensureDirectoryType(type);
+
+    const items = req.body?.items;
+    if (!Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ message: 'Ожидается список записей для импорта' });
+    }
+
+    const now = new Date().toISOString();
+
+    await knex.transaction(async (trx) => {
+      for (const entry of items) {
+        const source = entry || {};
+        const { id, created_at, updated_at, ...data } = source;
+        const createdAt = created_at || now;
+        const updatedAt = updated_at || createdAt;
+
+        await trx('directories').insert({
+          type,
+          data: JSON.stringify(data || {}),
+          created_at: createdAt,
+          updated_at: updatedAt,
+        });
+      }
+    });
+
+    return res.status(201).json({ inserted: items.length });
+  } catch (err) {
+    return next(err);
+  }
+});
+
+app.post('/api/directories/:type', authMiddleware, async (req, res, next) => {
+  try {
+    const { type } = req.params;
+    ensureDirectoryType(type);
+
+    const payload = req.body || {};
+    const now = new Date().toISOString();
+
+    const [id] = await knex('directories').insert({
+      type,
+      data: JSON.stringify(payload),
+      created_at: now,
+      updated_at: now,
+    });
+
+    const created = await knex('directories').where({ id }).first();
+
+    return res.status(201).json({
+      id: created.id,
+      created_at: created.created_at,
+      updated_at: created.updated_at,
+      ...(created.data ? JSON.parse(created.data) : {}),
+    });
+  } catch (err) {
+    return next(err);
+  }
+});
+
+app.put('/api/directories/:type/:id', authMiddleware, async (req, res, next) => {
+  try {
+    const { type, id } = req.params;
+    ensureDirectoryType(type);
+
+    const existing = await knex('directories').where({ id: Number(id), type }).first();
+    if (!existing) {
+      return res.status(404).json({ message: 'Запись не найдена' });
+    }
+
+    const payload = req.body || {};
+    const now = new Date().toISOString();
+
+    await knex('directories')
+      .where({ id: Number(id), type })
+      .update({ data: JSON.stringify(payload), updated_at: now });
+
+    const updated = await knex('directories').where({ id: Number(id) }).first();
+
+    return res.json({
+      id: updated.id,
+      created_at: updated.created_at,
+      updated_at: updated.updated_at,
+      ...(updated.data ? JSON.parse(updated.data) : {}),
+    });
+  } catch (err) {
+    return next(err);
+  }
+});
+
+app.delete('/api/directories/:type/:id', authMiddleware, async (req, res, next) => {
+  try {
+    const { type, id } = req.params;
+    ensureDirectoryType(type);
+
+    const existing = await knex('directories').where({ id: Number(id), type }).first();
+    if (!existing) {
+      return res.status(404).json({ message: 'Запись не найдена' });
+    }
+
+    await knex('directories').where({ id: Number(id), type }).del();
+    return res.status(204).send();
   } catch (err) {
     return next(err);
   }
