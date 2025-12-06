@@ -20,13 +20,15 @@
           <tr>
             <th>№</th>
             <th>Дата</th>
+            <th>Клиент</th>
+            <th>Статус</th>
             <th>Комментарий</th>
             <th class="text-right">Сумма</th>
           </tr>
         </thead>
         <tbody>
           <tr v-if="!orders.length">
-            <td colspan="4" class="page-loading">Нет заказов</td>
+            <td colspan="6" class="page-loading">Нет заказов</td>
           </tr>
           <tr
             v-for="order in orders"
@@ -36,6 +38,12 @@
           >
             <td>{{ order.id }}</td>
             <td>{{ formatDate(order.created_at) }}</td>
+            <td>{{ getClientName(order.client_id) }}</td>
+            <td>
+              <span class="status-badge" :class="`status-${order.status}`">
+                {{ statusLabels[order.status] || order.status }}
+              </span>
+            </td>
             <td>{{ order.comment || '—' }}</td>
             <td class="text-right">{{ formatMoney(order.total_amount) }}</td>
           </tr>
@@ -54,6 +62,55 @@
 
         <div class="modal-body">
           <label class="field">
+            <span>Клиент</span>
+            <div class="client-row">
+              <div class="client-select">
+                <input v-model="clientSearch" type="text" placeholder="Поиск клиента" />
+                <select v-model="form.client_id">
+                  <option :value="null">Без клиента</option>
+                  <option v-for="client in filteredClients" :key="client.id" :value="client.id">
+                    {{ client.name }}
+                  </option>
+                </select>
+              </div>
+              <button class="btn-secondary" type="button" @click="toggleNewClient">
+                {{ showNewClientForm ? 'Скрыть' : 'Создать нового клиента' }}
+              </button>
+            </div>
+            <div v-if="showNewClientForm" class="new-client-card">
+              <div class="new-client-grid">
+                <label>
+                  <span>Название</span>
+                  <input v-model="newClient.name" type="text" placeholder="ООО «Пример»" />
+                </label>
+                <label>
+                  <span>Контактное лицо</span>
+                  <input v-model="newClient.contact" type="text" placeholder="Имя" />
+                </label>
+                <label>
+                  <span>Телефон</span>
+                  <input v-model="newClient.phone" type="text" placeholder="+7" />
+                </label>
+                <label>
+                  <span>Email</span>
+                  <input v-model="newClient.email" type="email" placeholder="client@example.com" />
+                </label>
+              </div>
+              <div class="new-client-actions">
+                <button class="btn-secondary" type="button" @click="toggleNewClient">Отмена</button>
+                <button
+                  class="btn-primary"
+                  type="button"
+                  :disabled="creatingClient || !newClient.name"
+                  @click="createClient"
+                >
+                  {{ creatingClient ? 'Сохранение…' : 'Сохранить клиента' }}
+                </button>
+              </div>
+            </div>
+          </label>
+
+          <label class="field">
             <span>Комментарий</span>
             <textarea v-model="form.comment" rows="2" />
           </label>
@@ -68,8 +125,8 @@
             <select v-model="form.status">
               <option value="new">new</option>
               <option value="in_progress">in_progress</option>
-              <option value="completed">completed</option>
-              <option value="cancelled">cancelled</option>
+              <option value="done">done</option>
+              <option value="canceled">canceled</option>
             </select>
           </label>
 
@@ -144,9 +201,21 @@ const loading = ref(false);
 const error = ref('');
 const saving = ref(false);
 const isModalOpen = ref(false);
+const clients = ref([]);
+const clientSearch = ref('');
+const showNewClientForm = ref(false);
+const creatingClient = ref(false);
+
+const statusLabels = {
+  new: 'Новый',
+  in_progress: 'В работе',
+  done: 'Завершён',
+  canceled: 'Отменён',
+};
 
 const form = reactive({
   id: null,
+  client_id: null,
   comment: '',
   deadline: '',
   status: 'new',
@@ -178,6 +247,7 @@ function formatMoney(value) {
 
 function resetForm() {
   form.id = null;
+  form.client_id = null;
   form.comment = '';
   form.deadline = '';
   form.status = 'new';
@@ -211,6 +281,76 @@ function updateItem(index) {
   recalcTotals();
 }
 
+const filteredClients = computed(() => {
+  const search = clientSearch.value.trim().toLowerCase();
+  if (!search) return clients.value;
+  return clients.value.filter((client) =>
+    client.name?.toLowerCase().includes(search) || client.contact?.toLowerCase().includes(search)
+  );
+});
+
+function getClientName(id) {
+  if (!id) return '—';
+  const found = clients.value.find((client) => client.id === id);
+  return found?.name || '—';
+}
+
+async function loadClients() {
+  try {
+    const { data } = await api.get('/directories/clients');
+    clients.value = Array.isArray(data.items)
+      ? data.items.map((item) => ({
+          id: item.id,
+          name: item.name || 'Без названия',
+          contact: item.contact || '',
+          phone: item.phone || '',
+          email: item.email || '',
+        }))
+      : [];
+  } catch (err) {
+    clients.value = [];
+  }
+}
+
+function toggleNewClient() {
+  showNewClientForm.value = !showNewClientForm.value;
+  if (!showNewClientForm.value) {
+    newClient.name = '';
+    newClient.contact = '';
+    newClient.phone = '';
+    newClient.email = '';
+  }
+}
+
+const newClient = reactive({
+  name: '',
+  contact: '',
+  phone: '',
+  email: '',
+});
+
+async function createClient() {
+  creatingClient.value = true;
+  try {
+    const payload = { ...newClient };
+    const { data } = await api.post('/directories/clients', payload);
+    const created = {
+      id: data.id,
+      name: data.name || payload.name,
+      contact: data.contact || payload.contact,
+      phone: data.phone || payload.phone,
+      email: data.email || payload.email,
+    };
+    clients.value.unshift(created);
+    form.client_id = created.id;
+    toggleNewClient();
+  } catch (err) {
+    error.value = err?.response?.data?.message || 'Не удалось создать клиента';
+  } finally {
+    creatingClient.value = false;
+  }
+}
+
 async function loadOrders() {
   loading.value = true;
   error.value = '';
@@ -228,6 +368,7 @@ async function openEdit(id) {
   try {
     const { data } = await api.get(`/orders/${id}`);
     form.id = data.id;
+    form.client_id = data.client_id || null;
     form.comment = data.comment || '';
     form.deadline = data.deadline ? data.deadline.slice(0, 16) : '';
     form.status = data.status || 'new';
@@ -258,7 +399,9 @@ async function saveOrder() {
   saving.value = true;
   try {
     recalcTotals();
+    const clientId = form.client_id ? Number(form.client_id) : null;
     const payload = {
+      client_id: clientId,
       comment: form.comment,
       deadline: form.deadline ? new Date(form.deadline).toISOString() : null,
       status: form.status,
@@ -282,7 +425,7 @@ async function saveOrder() {
 
 onMounted(() => {
   resetForm();
-  loadOrders();
+  loadClients().finally(() => loadOrders());
 });
 </script>
 
@@ -431,5 +574,84 @@ onMounted(() => {
 
 .total {
   font-weight: 600;
+}
+
+.status-badge {
+  display: inline-block;
+  padding: 4px 8px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.status-new {
+  background: #e0f2fe;
+  color: #0369a1;
+}
+
+.status-in_progress {
+  background: #fef3c7;
+  color: #b45309;
+}
+
+.status-done {
+  background: #dcfce7;
+  color: #15803d;
+}
+
+.status-canceled {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.client-row {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.client-select {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.client-select input {
+  width: 180px;
+}
+
+.client-select select {
+  min-width: 200px;
+}
+
+.new-client-card {
+  margin-top: 8px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 12px;
+  background: #f9fafb;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.new-client-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+}
+
+.new-client-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.new-client-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
 }
 </style>

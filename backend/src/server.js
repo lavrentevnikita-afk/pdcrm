@@ -438,13 +438,39 @@ app.get('/api/dashboard/summary', authMiddleware, async (req, res, next) => {
 
 // ===== Orders API =====
 
-function mapOrder(row, items = []) {
+const ORDER_STATUSES = new Set(['new', 'in_progress', 'done', 'canceled']);
+
+function normalizeStatus(value) {
+  if (value === 'completed') return 'done';
+  if (value === 'cancelled') return 'canceled';
+  if (value && ORDER_STATUSES.has(value)) return value;
+  return 'new';
+}
+
+function parseClientData(raw) {
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw);
+  } catch (e) {
+    return null;
+  }
+}
+
+function mapOrder(row, items = [], clientData) {
   if (!row) return null;
+
+  const client = clientData || parseClientData(row.client_data);
 
   return {
     id: row.id,
     client_id: row.client_id || null,
-    status: row.status,
+    client: client && row.client_id
+      ? {
+          id: row.client_id,
+          ...client,
+        }
+      : null,
+    status: normalizeStatus(row.status),
     total_amount: Number(row.total_amount || 0),
     deadline: row.deadline,
     comment: row.comment || '',
@@ -465,7 +491,17 @@ function mapOrder(row, items = []) {
 // GET /api/orders — список заказов
 app.get('/api/orders', authMiddleware, async (req, res, next) => {
   try {
-    const rows = await knex('orders').orderBy('created_at', 'desc');
+    const rows = await knex('orders as o')
+      .leftJoin('directories as c', function () {
+        this.on('o.client_id', '=', 'c.id').andOn(
+          'c.type',
+          '=',
+          knex.raw('?', ['clients'])
+        );
+      })
+      .select('o.*', 'c.data as client_data')
+      .orderBy('o.created_at', 'desc');
+
     return res.json({ items: rows.map((row) => mapOrder(row)) });
   } catch (err) {
     return next(err);
@@ -476,7 +512,17 @@ app.get('/api/orders', authMiddleware, async (req, res, next) => {
 app.get('/api/orders/:id', authMiddleware, async (req, res, next) => {
   try {
     const { id } = req.params;
-    const order = await knex('orders').where({ id }).first();
+    const order = await knex('orders as o')
+      .leftJoin('directories as c', function () {
+        this.on('o.client_id', '=', 'c.id').andOn(
+          'c.type',
+          '=',
+          knex.raw('?', ['clients'])
+        );
+      })
+      .select('o.*', 'c.data as client_data')
+      .where('o.id', id)
+      .first();
 
     if (!order) {
       return res.status(404).json({ message: 'Заказ не найден' });
@@ -519,10 +565,11 @@ app.post('/api/orders', authMiddleware, async (req, res, next) => {
       req.body || {};
 
     const { total, normalizedItems } = recalcTotals(items);
+    const normalizedStatus = normalizeStatus(status);
 
     const [orderId] = await trx('orders').insert({
       client_id: clientId || null,
-      status: status || 'new',
+      status: normalizedStatus,
       deadline: deadline || null,
       comment: comment || '',
       total_amount: total,
@@ -537,7 +584,17 @@ app.post('/api/orders', authMiddleware, async (req, res, next) => {
 
     await trx.commit();
 
-    const created = await knex('orders').where({ id: orderId }).first();
+    const created = await knex('orders as o')
+      .leftJoin('directories as c', function () {
+        this.on('o.client_id', '=', 'c.id').andOn(
+          'c.type',
+          '=',
+          knex.raw('?', ['clients'])
+        );
+      })
+      .select('o.*', 'c.data as client_data')
+      .where('o.id', orderId)
+      .first();
     const createdItems = await knex('order_items').where({ order_id: orderId });
     return res.status(201).json(mapOrder(created, createdItems));
   } catch (err) {
@@ -562,14 +619,16 @@ app.put('/api/orders/:id', authMiddleware, async (req, res, next) => {
 
     const { total, normalizedItems } = recalcTotals(items);
 
-    await trx('orders').where({ id }).update({
-      client_id: clientId === undefined ? existing.client_id : clientId,
-      status: status || existing.status,
-      deadline: deadline === undefined ? existing.deadline : deadline,
-      comment: comment === undefined ? existing.comment : comment,
-      total_amount: total,
-      updated_at: new Date().toISOString(),
-    });
+    await trx('orders')
+      .where({ id })
+      .update({
+        client_id: clientId === undefined ? existing.client_id : clientId,
+        status: normalizeStatus(status ?? existing.status),
+        deadline: deadline === undefined ? existing.deadline : deadline,
+        comment: comment === undefined ? existing.comment : comment,
+        total_amount: total,
+        updated_at: new Date().toISOString(),
+      });
 
     await trx('order_items').where({ order_id: id }).del();
     for (const item of normalizedItems) {
@@ -581,7 +640,17 @@ app.put('/api/orders/:id', authMiddleware, async (req, res, next) => {
 
     await trx.commit();
 
-    const updated = await knex('orders').where({ id }).first();
+    const updated = await knex('orders as o')
+      .leftJoin('directories as c', function () {
+        this.on('o.client_id', '=', 'c.id').andOn(
+          'c.type',
+          '=',
+          knex.raw('?', ['clients'])
+        );
+      })
+      .select('o.*', 'c.data as client_data')
+      .where('o.id', id)
+      .first();
     const updatedItems = await knex('order_items').where({ order_id: id });
     return res.json(mapOrder(updated, updatedItems));
   } catch (err) {

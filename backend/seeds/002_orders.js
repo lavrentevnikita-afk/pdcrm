@@ -6,10 +6,19 @@ exports.seed = async function (knex) {
   await knex('order_items').del();
   await knex('orders').del();
 
+  const clients = await knex('directories').where({ type: 'clients' });
+  const clientsByName = new Map(
+    clients.map((row) => {
+      const data = row.data ? JSON.parse(row.data) : {};
+      return [data.name, row.id];
+    })
+  );
+
   const now = new Date();
 
   const orders = [
     {
+      clientName: 'Coffee&Co',
       comment: 'Визитки для кофейни',
       status: 'new',
       deadline: new Date(now.getTime() + 2 * 24 * 60 * 60 * 1000).toISOString(),
@@ -19,6 +28,7 @@ exports.seed = async function (knex) {
       ],
     },
     {
+      clientName: 'ООО «СеверСтрой»',
       comment: 'Плакаты А2 для акции',
       status: 'in_progress',
       deadline: new Date(now.getTime() + 5 * 24 * 60 * 60 * 1000).toISOString(),
@@ -28,8 +38,9 @@ exports.seed = async function (knex) {
       ],
     },
     {
+      clientName: 'Театр света',
       comment: 'Наклейки круг 5 см',
-      status: 'completed',
+      status: 'done',
       deadline: new Date(now.getTime() - 3 * 24 * 60 * 60 * 1000).toISOString(),
       items: [
         { name: 'Печать 1000 шт.', qty: 1000, price: 3.2 },
@@ -39,6 +50,7 @@ exports.seed = async function (knex) {
 
   for (const order of orders) {
     const insertedIds = await knex('orders').insert({
+      client_id: clientsByName.get(order.clientName) || null,
       status: order.status,
       deadline: order.deadline,
       comment: order.comment,
