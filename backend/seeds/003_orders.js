@@ -82,7 +82,21 @@ exports.seed = async function (knex) {
     let total = 0;
 
     for (const item of order.items) {
-      const product = findProduct(item.product_id);
+      let product = findProduct(item.product_id);
+
+      // In case the referenced product is missing (e.g. ids shifted),
+      // create a placeholder product to satisfy NOT NULL constraint.
+      if (!product) {
+        const [placeholderId] = await knex('products').insert({
+          name: 'Демо продукт',
+          base_price: 0,
+          is_active: 1,
+        });
+
+        product = { id: placeholderId, name: 'Демо продукт', base_price: 0 };
+        products.unshift(product);
+        productById.set(product.id, product);
+      }
       const qty = Number(item.qty) || 0;
       const price = item.price === undefined ? Number(product.base_price || 0) : Number(item.price) || 0;
       const lineTotal = qty * price;
