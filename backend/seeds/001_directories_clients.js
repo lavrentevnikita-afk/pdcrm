@@ -49,20 +49,6 @@ exports.seed = async function (knex) {
     },
   ]);
 
-  await resetDirectory('organizations', [
-    {
-      name: 'ООО «Полидатум»',
-      inn: '7830001112',
-      kpp: '781301001',
-      ogrn: '1217800100001',
-      address: '191186, Санкт-Петербург, наб. Реки Фонтанки, 18',
-      bank: 'АО «Точка»',
-      checking_account: '40702810800000123456',
-      correspondent_account: '30101810200000000593',
-      bik: '044525593',
-    },
-  ]);
-
   await resetDirectory('materialCategories', [
     { name: 'Бумага' },
     { name: 'Пластик и ПВХ' },
