@@ -14,10 +14,28 @@ exports.seed = async function (knex) {
     })
   );
 
-  const products = await knex('products').select('id', 'name', 'base_price');
+  let products = await knex('products').select('id', 'name', 'base_price');
+
+  // Guarantee at least one product to satisfy NOT NULL product_id on order_items
+  if (products.length === 0) {
+    const [placeholderId] = await knex('products').insert({
+      name: 'Демо продукт',
+      base_price: 0,
+      is_active: 1,
+    });
+
+    products = [
+      {
+        id: placeholderId,
+        name: 'Демо продукт',
+        base_price: 0,
+      },
+    ];
+  }
+
   const productById = new Map(products.map((p) => [p.id, p]));
 
-  const findProduct = (id) => productById.get(id) || { id: null, name: 'Позиция', base_price: 0 };
+  const findProduct = (id) => productById.get(id) || products[0];
 
   const now = new Date();
 
